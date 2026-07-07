@@ -5,10 +5,11 @@ import { Header } from './components/Header';
 import { UploadTab } from './components/UploadTab';
 import { ReportTab } from './components/ReportTab';
 import { PrognosisTab } from './components/PrognosisTab';
+import { AdminTab } from './components/AdminTab';
 
 export default function App() {
   const [role, setRole] = useState<'skpd' | 'pemda'>('skpd');
-  const [activeTab, setActiveTab] = useState<'upload' | 'report' | 'prognosis'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'report' | 'prognosis' | 'admin'>('upload');
   const [skpdList, setSkpdList] = useState<{ kode: string; uraian: string }[]>([]);
   const [activeSkpd, setActiveSkpd] = useState<string>('');
   const [loadingSkpd, setLoadingSkpd] = useState<boolean>(true);
@@ -45,6 +46,7 @@ export default function App() {
     { id: 'upload', label: 'Upload Excel LRA', icon: UploadCloud },
     { id: 'report', label: 'Rekapitulasi LRA', icon: FileText },
     { id: 'prognosis', label: 'Prognosis Semester II', icon: BarChart2 },
+    ...(role === 'pemda' ? [{ id: 'admin', label: 'Admin & SQL Client', icon: Server }] : [])
   ];
 
   return (
@@ -55,7 +57,9 @@ export default function App() {
         role={role}
         onChangeRole={(newRole) => {
           setRole(newRole);
-          // If changing back to skpd, keep it active on selected skpd
+          if (newRole === 'skpd' && activeTab === 'admin') {
+            setActiveTab('upload');
+          }
         }}
         activeSkpd={activeSkpd}
         onChangeActiveSkpd={setActiveSkpd}
@@ -72,11 +76,13 @@ export default function App() {
               {activeTab === 'upload' && 'Pusat Integrasi Data LRA'}
               {activeTab === 'report' && 'Laporan Realisasi Anggaran'}
               {activeTab === 'prognosis' && 'Penyusunan Prognosis'}
+              {activeTab === 'admin' && 'Sistem Admin & SQL Client'}
             </h2>
             <p className="text-xs text-gray-400 mt-1">
               {activeTab === 'upload' && 'Unggah laporan realisasi belanja, pendapatan, atau data master'}
               {activeTab === 'report' && `Melihat visualisasi laporan realisasi untuk ${activeSkpdUraian}`}
               {activeTab === 'prognosis' && `Kelola prognosis realisasi anggaran belanja dan pendapatan`}
+              {activeTab === 'admin' && 'Kelola database master referensi dan jalankan kueri SQL SQLite3 kustom'}
             </p>
           </div>
           
@@ -147,6 +153,12 @@ export default function App() {
                   role={role}
                   activeSkpd={activeSkpd}
                   skpdList={skpdList}
+                />
+              )}
+
+              {activeTab === 'admin' && role === 'pemda' && (
+                <AdminTab
+                  onUploadSuccess={() => setRefreshTrigger(p => p + 1)}
                 />
               )}
             </motion.div>

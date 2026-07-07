@@ -19,6 +19,56 @@ export function extractBulanAkhir(periodText: string): number {
   return 6; // default to June (Semester 1)
 }
 
+// Helper to parse Indonesian numeric strings into standard JavaScript numbers safely
+export function parseIndonesianNumber(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') {
+    return isNaN(val) ? 0 : val;
+  }
+  let str = String(val).trim();
+  
+  // Remove currency prefixes (Rp., Rp, IDR) and spaces
+  str = str.replace(/Rp\.?/gi, '').replace(/IDR/gi, '').replace(/\s/g, '');
+  
+  // Handle parenthesis formatting for negative numbers, e.g. (1.200.000)
+  let isNegative = false;
+  if (str.startsWith('(') && str.endsWith(')')) {
+    isNegative = true;
+    str = str.substring(1, str.length - 1);
+  }
+
+  if (!str) return 0;
+
+  const hasComma = str.includes(',');
+  const hasDot = str.includes('.');
+
+  if (hasComma && hasDot) {
+    // Standard Indonesian format with both thousands dot and decimal comma
+    str = str.replace(/\./g, '').replace(/,/g, '.');
+  } else if (hasComma) {
+    // Only comma is present, treat it as decimal point
+    str = str.replace(/,/g, '.');
+  } else if (hasDot) {
+    // Only dot is present. Determine if it is a thousands separator or decimal dot
+    const parts = str.split('.');
+    if (parts.length > 2) {
+      // Multiple dots -> thousands separator
+      str = str.replace(/\./g, '');
+    } else {
+      // Single dot -> check if followed by exactly 3 digits (very common for thousands in Indonesian LRA data)
+      const afterDot = parts[1];
+      if (afterDot && afterDot.length === 3) {
+        str = str.replace(/\./g, '');
+      }
+      // If it's not 3 digits, e.g. "12.5" or "12.50", treat as decimal dot and leave it alone
+    }
+  }
+
+  const num = Number(str);
+  const result = isNaN(num) ? 0 : num;
+  return isNegative ? -result : result;
+}
+
 export class MasterUseCase {
   constructor(private masterRepo: IMasterRepository) {}
 
@@ -200,17 +250,17 @@ export class LraUseCase {
         if (d.length === 19) {
           // Leaf -> parsed as a transaction record
           // Anggaran = F + H + J + L (indices 5, 7, 9, 11)
-          const f_ang = Number(row[5] || 0);
-          const h_ang = Number(row[7] || 0);
-          const j_ang = Number(row[9] || 0);
-          const l_ang = Number(row[11] || 0);
+          const f_ang = parseIndonesianNumber(row[5]);
+          const h_ang = parseIndonesianNumber(row[7]);
+          const j_ang = parseIndonesianNumber(row[9]);
+          const l_ang = parseIndonesianNumber(row[11]);
           const anggaran = f_ang + h_ang + j_ang + l_ang;
 
           // Realisasi = G + I + K + M (indices 6, 8, 10, 12)
-          const g_rea = Number(row[6] || 0);
-          const i_rea = Number(row[8] || 0);
-          const k_rea = Number(row[10] || 0);
-          const m_rea = Number(row[12] || 0);
+          const g_rea = parseIndonesianNumber(row[6]);
+          const i_rea = parseIndonesianNumber(row[8]);
+          const k_rea = parseIndonesianNumber(row[10]);
+          const m_rea = parseIndonesianNumber(row[12]);
           const realisasi = g_rea + i_rea + k_rea + m_rea;
 
           // If role is SKPD, ensure records only belong to uploaderSkpdKode
@@ -375,8 +425,8 @@ export class LraUseCase {
 
       const kode = String(row[0] || '').trim();
       const uraian = String(row[1] || '').trim();
-      const anggaran = Number(row[2] || 0);
-      const realisasi = Number(row[3] || 0);
+      const anggaran = parseIndonesianNumber(row[2]);
+      const realisasi = parseIndonesianNumber(row[3]);
 
       if (!kode || kode === 'undefined') continue;
       if (kode.startsWith('5')) continue; // Skip Belanja section
@@ -477,8 +527,8 @@ export class LraUseCase {
         const colIdx = Number(colIdxStr);
         const skpdInfo = headerSkpd[colIdx];
         
-        const anggaran = Number(row[colIdx] || 0);
-        const realisasi = Number(row[colIdx + 1] || 0);
+        const anggaran = parseIndonesianNumber(row[colIdx]);
+        const realisasi = parseIndonesianNumber(row[colIdx + 1]);
 
         if (anggaran === 0 && realisasi === 0) continue; // skip zero lines for space optimization
 

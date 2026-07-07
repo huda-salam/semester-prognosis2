@@ -1,4 +1,5 @@
 import { Request, Response, Router } from 'express';
+import { db } from '../../db/knex';
 import { KnexMasterRepository, KnexLraRepository, KnexPrognosisRepository } from '../repositories/KnexRepositories';
 import { MasterUseCase, LraUseCase, PrognosisUseCase } from '../../domain/usecases';
 
@@ -356,6 +357,60 @@ export function createApiRouter(): Router {
       res.json({ success: true, message: 'Prognosis berhasil dibuka kembali' });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/admin/master-summary
+   * Retrieve total record counts in database for admin overview
+   */
+  router.get('/admin/master-summary', async (req: Request, res: Response): Promise<void> => {
+    try {
+      const referenceCounts = await db('master_referensi')
+        .select('jenis')
+        .count('* as count')
+        .groupBy('jenis');
+
+      const lraCountRes = await db('data_lra').count('* as count').first();
+      const prognosisBelanjaCountRes = await db('data_prognosis_belanja').count('* as count').first();
+      const prognosisPendCountRes = await db('data_prognosis_pendapatan_pembiayaan').count('* as count').first();
+
+      res.json({
+        success: true,
+        data: {
+          references: referenceCounts,
+          lraCount: lraCountRes ? Number(lraCountRes.count) : 0,
+          prognosisBelanjaCount: prognosisBelanjaCountRes ? Number(prognosisBelanjaCountRes.count) : 0,
+          prognosisPendCount: prognosisPendCountRes ? Number(prognosisPendCountRes.count) : 0
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/admin/query
+   * SQL client query runner for Pemda Admin
+   */
+  router.post('/admin/query', async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { sql } = req.body;
+      if (!sql || typeof sql !== 'string') {
+        res.status(400).json({ success: false, error: 'Query SQL wajib diisi' });
+        return;
+      }
+
+      const isDangerous = /drop\s+database/i.test(sql);
+      if (isDangerous) {
+        res.status(400).json({ success: false, error: 'Maaf, perintah DROP DATABASE tidak diperbolehkan.' });
+        return;
+      }
+
+      const result = await db.raw(sql);
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error.message });
     }
   });
 
