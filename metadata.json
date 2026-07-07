@@ -1,0 +1,8 @@
+{
+  "name": "Upload dan Rekap LRA",
+  "description": "Aplikasi upload, parsing Excel, rekapitulasi, dan prognosis Laporan Realisasi Anggaran (LRA) Kabupaten Kediri.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
