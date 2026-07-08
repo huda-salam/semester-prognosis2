@@ -6,9 +6,25 @@ import { UploadTab } from './components/UploadTab';
 import { ReportTab } from './components/ReportTab';
 import { PrognosisTab } from './components/PrognosisTab';
 import { AdminTab } from './components/AdminTab';
+import { LoginForm } from './components/LoginForm';
 
 export default function App() {
-  const [role, setRole] = useState<'skpd' | 'pemda'>('skpd');
+  const [currentUser, setCurrentUser] = useState<{
+    username: string;
+    role: 'skpd' | 'pemda';
+    kode_skpd: string | null;
+    nama_skpd: string | null;
+    allowed_skpds?: { kode: string; nama: string }[];
+  } | null>(() => {
+    const saved = localStorage.getItem('currentUser');
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [role, setRole] = useState<'skpd' | 'pemda'>(currentUser?.role || 'skpd');
   const [activeTab, setActiveTab] = useState<'upload' | 'report' | 'prognosis' | 'admin'>('upload');
   const [skpdList, setSkpdList] = useState<{ kode: string; uraian: string }[]>([]);
   const [activeSkpd, setActiveSkpd] = useState<string>('');
@@ -23,10 +39,31 @@ export default function App() {
       const res = await fetch('/api/master?jenis=skpd');
       const result = await res.json();
       if (res.ok && result.success) {
-        setSkpdList(result.data || []);
-        if (result.data && result.data.length > 0) {
-          // Default to first SKPD (e.g., DINAS PENDIDIKAN or similar)
-          setActiveSkpd(result.data[0].kode);
+        const data = result.data || [];
+        setSkpdList(data);
+        
+        if (currentUser) {
+          if (currentUser.role === 'skpd') {
+            if (currentUser.allowed_skpds && currentUser.allowed_skpds.length > 0) {
+              const isAllowed = currentUser.allowed_skpds.some((s: any) => s.kode === activeSkpd);
+              if (!activeSkpd || !isAllowed) {
+                setActiveSkpd(currentUser.allowed_skpds[0].kode);
+              }
+            } else if (currentUser.kode_skpd) {
+              setActiveSkpd(currentUser.kode_skpd);
+            } else {
+              // Fuzzy match on loaded list if not cached in DB
+              const match = data.find((s: any) => s.uraian.toLowerCase().includes(currentUser.username.toLowerCase()));
+              if (match) {
+                setActiveSkpd(match.kode);
+              } else if (data.length > 0) {
+                setActiveSkpd(data[0].kode);
+              }
+            }
+          } else if (data.length > 0 && !activeSkpd) {
+            // Default to first SKPD for admin
+            setActiveSkpd(data[0].kode);
+          }
         }
       }
     } catch (err) {
@@ -38,7 +75,23 @@ export default function App() {
 
   useEffect(() => {
     fetchSkpds();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, currentUser]);
+
+  const handleLoginSuccess = (user: any) => {
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    setCurrentUser(user);
+    setRole(user.role);
+    if (user.role === 'skpd' && user.kode_skpd) {
+      setActiveSkpd(user.kode_skpd);
+    }
+    setActiveTab('upload');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    setCurrentUser(null);
+    setActiveTab('upload');
+  };
 
   const activeSkpdUraian = skpdList.find(s => s.kode === activeSkpd)?.uraian || 'SKPD';
 
@@ -48,6 +101,10 @@ export default function App() {
     { id: 'prognosis', label: 'Prognosis Semester II', icon: BarChart2 },
     ...(role === 'pemda' ? [{ id: 'admin', label: 'Admin & SQL Client', icon: Server }] : [])
   ];
+
+  if (!currentUser) {
+    return <LoginForm onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col antialiased">
@@ -64,6 +121,8 @@ export default function App() {
         activeSkpd={activeSkpd}
         onChangeActiveSkpd={setActiveSkpd}
         skpdList={skpdList}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Main Container Wrapper */}

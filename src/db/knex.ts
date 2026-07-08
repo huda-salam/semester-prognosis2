@@ -1,5 +1,6 @@
 import knex from 'knex';
 import path from 'path';
+import * as XLSX from 'xlsx';
 
 // Local SQLite database file location
 const dbPath = path.resolve(process.cwd(), 'data.db');
@@ -115,8 +116,187 @@ export async function initializeDatabase() {
     console.log('Created table data_prognosis_pendapatan_pembiayaan');
   }
 
+  // 5. Table: users
+  const hasUsersTable = await db.schema.hasTable('users');
+  if (!hasUsersTable) {
+    await db.schema.createTable('users', (table) => {
+      table.string('username').primary();
+      table.string('password').notNullable();
+      table.string('role').notNullable(); // skpd, pemda
+      table.string('kode_skpd').nullable();
+      table.string('nama_skpd').nullable();
+    });
+    console.log('Created table users');
+  }
+
+  // 6. Table: user_skpd
+  const hasUserSkpdTable = await db.schema.hasTable('user_skpd');
+  if (!hasUserSkpdTable) {
+    await db.schema.createTable('user_skpd', (table) => {
+      table.increments('id').primary();
+      table.string('username').notNullable().references('username').inTable('users').onDelete('CASCADE');
+      table.string('kode_skpd').notNullable();
+    });
+    console.log('Created table user_skpd');
+  }
+
   // Seed default master data if empty, so user doesn't face an empty system
   await seedDefaultMasterData();
+  // Seed users if empty
+  await seedUsers();
+}
+
+/**
+ * Seeds user accounts and SKPD mappings from the Google Sheet.
+ */
+async function seedUsers() {
+  const skpdCount = await db('user_skpd').count('* as cnt').first();
+  const count = skpdCount ? Number(skpdCount.cnt) : 0;
+  
+  if (count === 0) {
+    console.log('Seeding initial users and user_skpd from sheet...');
+    try {
+      // Fetch sheet
+      const url = 'https://docs.google.com/spreadsheets/d/1p7ofuXLB0iQZJ91eFuebUTHv-DrEGb6Q/export?format=xlsx';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const buffer = await res.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      
+      // Parse username sheet
+      const usernameSheet = workbook.Sheets['username'];
+      const usernameRows = XLSX.utils.sheet_to_json<any>(usernameSheet);
+      
+      // Parse user_skpd sheet
+      const userSkpdSheet = workbook.Sheets['user_skpd'];
+      const userSkpdRows = XLSX.utils.sheet_to_json<any[]>(userSkpdSheet, { header: 1 });
+      
+      // Clear tables
+      await db('user_skpd').del();
+      await db('users').del();
+      
+      // Insert Admin user
+      await db('users').insert({
+        username: 'akuntansi.bpkadkdr@gmail.com',
+        password: '123456',
+        role: 'pemda',
+        kode_skpd: null,
+        nama_skpd: null
+      });
+
+      const usersToInsert: any[] = [];
+      const userSet = new Set<string>();
+      userSet.add('akuntansi.bpkadkdr@gmail.com');
+
+      usernameRows.forEach(row => {
+        const username = String(row.username || '').trim();
+        const password = String(row.password || '123456').trim();
+        if (username && username.toLowerCase() !== 'username' && !userSet.has(username)) {
+          userSet.add(username);
+          usersToInsert.push({
+            username,
+            password,
+            role: 'skpd',
+            kode_skpd: null,
+            nama_skpd: null
+          });
+        }
+      });
+
+      // Insert users first (to satisfy Foreign Key constraints)
+      const chunkSize = 50;
+      for (let i = 0; i < usersToInsert.length; i += chunkSize) {
+        await db('users').insert(usersToInsert.slice(i, i + chunkSize));
+      }
+
+      const mappingsToInsert: any[] = [];
+      userSkpdRows.forEach(row => {
+        const u = String(row[0] || '').trim();
+        const kode = String(row[1] || '').trim();
+        
+        if (u && kode && u.toLowerCase() !== 'username' && u.toLowerCase() !== 'user_skpd' && kode.toLowerCase() !== 'kode_skpd') {
+          // If the username from mapping isn't in users table, insert it
+          if (!userSet.has(u)) {
+            userSet.add(u);
+            usersToInsert.push({
+              username: u,
+              password: '123456',
+              role: 'skpd',
+              kode_skpd: null,
+              nama_skpd: null
+            });
+          }
+          mappingsToInsert.push({
+            username: u,
+            kode_skpd: kode
+          });
+        }
+      });
+
+      // Insert any extra users found only in the user_skpd mapping sheet
+      const extraUsers = usersToInsert.filter(x => x.username && !usernameRows.some(r => String(r.username || '').trim() === x.username));
+      for (let i = 0; i < extraUsers.length; i += chunkSize) {
+        await db('users').insert(extraUsers.slice(i, i + chunkSize)).onConflict('username').ignore();
+      }
+
+      // Insert mappings
+      for (let i = 0; i < mappingsToInsert.length; i += chunkSize) {
+        await db('user_skpd').insert(mappingsToInsert.slice(i, i + chunkSize));
+      }
+
+      console.log(`Successfully seeded ${userSet.size} user accounts and ${mappingsToInsert.length} user_skpd records.`);
+    } catch (err) {
+      console.error('Failed to seed users from Google Sheet. Using fallback list...', err);
+      await seedUsersFallback();
+    }
+  }
+}
+
+/**
+ * Offline fallback seeding function.
+ */
+async function seedUsersFallback() {
+  await db('user_skpd').del();
+  await db('users').del();
+
+  // Admin user
+  await db('users').insert({
+    username: 'akuntansi.bpkadkdr@gmail.com',
+    password: '123456',
+    role: 'pemda',
+    kode_skpd: null,
+    nama_skpd: null
+  });
+
+  // Pendidikan
+  await db('users').insert({
+    username: 'pendidikan',
+    password: '123456',
+    role: 'skpd',
+    kode_skpd: null,
+    nama_skpd: null
+  });
+  await db('user_skpd').insert({
+    username: 'pendidikan',
+    kode_skpd: '1.01.2.19.0.00.01.0000'
+  });
+
+  // Kesehatan
+  await db('users').insert({
+    username: 'kesehatan',
+    password: '123456',
+    role: 'skpd',
+    kode_skpd: null,
+    nama_skpd: null
+  });
+  await db('user_skpd').insert([
+    { username: 'kesehatan', kode_skpd: '1.02.0.00.0.00.02.0000' },
+    { username: 'kesehatan', kode_skpd: '1.02.0.00.0.00.02.0003' },
+    { username: 'kesehatan', kode_skpd: '1.02.0.00.0.00.02.0004' },
+    { username: 'kesehatan', kode_skpd: '1.02.0.00.0.00.02.0005' }
+  ]);
+  
+  console.log('Successfully seeded fallback users and mappings.');
 }
 
 /**

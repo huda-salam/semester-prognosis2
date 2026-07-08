@@ -1,5 +1,6 @@
 import React from 'react';
-import { Shield, Building2, UserCircle, Settings } from 'lucide-react';
+import { Shield, Building2, UserCircle, LogOut } from 'lucide-react';
+import { SkpdAutocomplete } from './SkpdAutocomplete';
 
 interface HeaderProps {
   role: 'skpd' | 'pemda';
@@ -7,6 +8,14 @@ interface HeaderProps {
   activeSkpd: string;
   onChangeActiveSkpd: (kode: string) => void;
   skpdList: { kode: string; uraian: string }[];
+  currentUser: {
+    username: string;
+    role: 'skpd' | 'pemda';
+    kode_skpd: string | null;
+    nama_skpd: string | null;
+    allowed_skpds?: { kode: string; nama: string }[];
+  } | null;
+  onLogout: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -14,12 +23,33 @@ export const Header: React.FC<HeaderProps> = ({
   onChangeRole,
   activeSkpd,
   onChangeActiveSkpd,
-  skpdList
+  skpdList,
+  currentUser,
+  onLogout
 }) => {
-  const currentSkpdName = skpdList.find(s => s.kode === activeSkpd)?.uraian || 'Pilih SKPD';
+  const selectableSkpds = React.useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'pemda') {
+      return skpdList;
+    }
+    if (currentUser.allowed_skpds && currentUser.allowed_skpds.length > 0) {
+      const allowedCodes = new Set(currentUser.allowed_skpds.map((s: any) => s.kode));
+      const filtered = skpdList.filter(s => allowedCodes.has(s.kode));
+      if (filtered.length > 0) return filtered;
+      return currentUser.allowed_skpds.map(s => ({ kode: s.kode, uraian: s.nama }));
+    }
+    if (currentUser.kode_skpd) {
+      const match = skpdList.find(s => s.kode === currentUser.kode_skpd);
+      if (match) return [match];
+      return [{ kode: currentUser.kode_skpd, uraian: currentUser.nama_skpd || 'SKPD' }];
+    }
+    return skpdList;
+  }, [currentUser, skpdList]);
+
+  const showAutocomplete = currentUser?.role === 'pemda' || (selectableSkpds.length > 1);
 
   return (
-    <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
+    <header className="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           
@@ -37,63 +67,52 @@ export const Header: React.FC<HeaderProps> = ({
               </p>
             </div>
           </div>
-
+          
           {/* User simulation context panel */}
           <div className="flex items-center space-x-4">
             
-            {/* Role Switcher */}
-            <div className="flex bg-gray-50 p-1 rounded-lg border border-gray-100">
-              <button
-                id="role-skpd-btn"
-                onClick={() => onChangeRole('skpd')}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  role === 'skpd'
-                    ? 'bg-white text-gray-950 shadow-sm border border-gray-100'
-                    : 'text-gray-500 hover:text-gray-950'
-                }`}
-              >
-                <UserCircle className="w-3.5 h-3.5" />
-                <span>SKPD</span>
-              </button>
-              <button
-                id="role-pemda-btn"
-                onClick={() => onChangeRole('pemda')}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  role === 'pemda'
-                    ? 'bg-white text-gray-950 shadow-sm border border-gray-100'
-                    : 'text-gray-500 hover:text-gray-950'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>PEMDA</span>
-              </button>
-            </div>
-
             {/* SKPD Context Selector */}
             <div className="flex items-center space-x-2">
               <span className="text-[11px] text-gray-400 uppercase font-bold">SKPD:</span>
-              <select
-                id="active-skpd-select"
-                value={activeSkpd}
-                onChange={(e) => onChangeActiveSkpd(e.target.value)}
-                className="bg-white border border-gray-200 hover:border-gray-300 rounded-lg text-xs font-medium px-3 py-2 text-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-950 max-w-[240px] truncate"
-              >
-                {skpdList.map((skpd) => (
-                  <option key={skpd.kode} value={skpd.kode} className="text-xs">
-                    {skpd.uraian}
-                  </option>
-                ))}
-              </select>
+              <SkpdAutocomplete
+                options={selectableSkpds}
+                selectedValue={activeSkpd}
+                onChange={onChangeActiveSkpd}
+                disabled={!showAutocomplete}
+              />
             </div>
 
-            {/* Badge Indicator */}
-            <div className={`px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wider uppercase border ${
-              role === 'pemda' 
-                ? 'bg-amber-50 text-amber-700 border-amber-100' 
-                : 'bg-blue-50 text-blue-700 border-blue-100'
-            }`}>
-              {role === 'pemda' ? 'PEMDA (ADMIN)' : 'SKPD USER'}
-            </div>
+            {/* User Info & Badge Indicator */}
+            {currentUser && (
+              <div className="flex items-center space-x-3 pl-2 border-l border-gray-200">
+                <div className="text-right hidden sm:block">
+                  <div className="text-xs font-bold text-gray-900 truncate max-w-[150px]">
+                    {currentUser.username}
+                  </div>
+                  <div className="text-[10px] text-gray-400 font-semibold uppercase">
+                    {currentUser.role === 'pemda' ? 'PEMDA (ADMIN)' : 'SKPD USER'}
+                  </div>
+                </div>
+
+                <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase border ${
+                  currentUser.role === 'pemda' 
+                    ? 'bg-amber-50 text-amber-700 border-amber-100' 
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                }`}>
+                  {currentUser.role === 'pemda' ? 'PEMDA' : 'SKPD'}
+                </div>
+
+                {/* Logout Button */}
+                <button
+                  id="logout-button"
+                  onClick={onLogout}
+                  title="Keluar"
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
           </div>
 

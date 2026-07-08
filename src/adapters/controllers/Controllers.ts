@@ -414,5 +414,153 @@ export function createApiRouter(): Router {
     }
   });
 
+  /**
+   * Helper function to match a username to an SKPD from master reference data
+   */
+  function findMatchingSkpd(username: string, skpds: any[]): { kode: string; uraian: string } | null {
+    const uLower = username.toLowerCase().replace(/_/g, ' ').trim();
+    
+    // 1. Exact match
+    let match = skpds.find(s => s.uraian.toLowerCase() === uLower);
+    if (match) return { kode: match.kode, uraian: match.uraian };
+
+    // 2. Map abbreviations to standard words for fuzzy matching
+    const searchTerms: string[] = [uLower];
+    if (uLower === 'pendidikan') searchTerms.push('dinas pendidikan');
+    if (uLower === 'kesehatan') searchTerms.push('dinas kesehatan');
+    if (uLower === 'dpupr') searchTerms.push('pekerjaan umum', 'pupr');
+    if (uLower === 'dperkim') searchTerms.push('perumahan rakyat', 'kawasan permukiman', 'perkim');
+    if (uLower === 'satpolpp') searchTerms.push('satuan polisi pamong praja', 'satpol', 'pp');
+    if (uLower === 'bpbd') searchTerms.push('penanggulangan bencana', 'bpbd');
+    if (uLower === 'dinsos') searchTerms.push('sosial', 'dinsos');
+    if (uLower === 'disnaker') searchTerms.push('tenaga kerja', 'disnaker');
+    if (uLower === 'dlh') searchTerms.push('lingkungan hidup', 'dlh');
+    if (uLower === 'dispendukcapil') searchTerms.push('kependudukan', 'catatan sipil', 'dispenduk');
+    if (uLower === 'dishub') searchTerms.push('perhubungan', 'dishub');
+    if (uLower === 'kominfo') searchTerms.push('komunikasi', 'informatika', 'kominfo');
+    if (uLower === 'dpmptsp') searchTerms.push('penanaman modal', 'dpmptsp');
+    if (uLower === 'bappeda') searchTerms.push('perencanaan pembangunan', 'bappeda');
+    if (uLower === 'bkad') searchTerms.push('keuangan dan aset', 'bkad');
+    if (uLower === 'bapenda') searchTerms.push('pendapatan daerah', 'bapenda');
+    if (uLower === 'bkpsdm') searchTerms.push('kepegawaian', 'bkpsdm');
+    if (uLower === 'inspektorat') searchTerms.push('inspektorat');
+    if (uLower === 'bakesbangpol') searchTerms.push('kesatuan bangsa', 'politik', 'bakesbangpol');
+    
+    // PKM mapping
+    if (uLower.startsWith('pkm ')) {
+      const pkmName = uLower.replace('pkm ', '').trim();
+      searchTerms.push(`puskesmas ${pkmName}`);
+    } else if (uLower.startsWith('pkm_')) {
+      const pkmName = uLower.replace('pkm_', '').trim();
+      searchTerms.push(`puskesmas ${pkmName}`);
+    }
+
+    // 3. Search substring
+    for (const term of searchTerms) {
+      match = skpds.find(s => {
+        const sLower = s.uraian.toLowerCase();
+        return sLower.includes(term) || term.includes(sLower);
+      });
+      if (match) return { kode: match.kode, uraian: match.uraian };
+    }
+
+    // 4. Fallback search on individual words
+    const words = uLower.split(' ').filter(w => w.length > 2);
+    if (words.length > 0) {
+      for (const word of words) {
+        match = skpds.find(s => s.uraian.toLowerCase().includes(word));
+        if (match) return { kode: match.kode, uraian: match.uraian };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * POST /api/login
+   * Authenticate a user and resolve role and associated SKPD if applicable
+   */
+  router.post('/login', async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        res.status(400).json({ success: false, error: 'Username dan Password wajib diisi' });
+        return;
+      }
+
+      // Special check: Only the user's email can login as Admin/Pemda
+      const user = await db('users').where({ username }).first();
+      if (!user) {
+        res.status(401).json({ success: false, error: 'Username tidak terdaftar' });
+        return;
+      }
+
+      if (user.password !== password) {
+        res.status(401).json({ success: false, error: 'Password salah' });
+        return;
+      }
+
+      // Check admin rule constraint: "untuk admin cuma bisa login dari email saya"
+      // User's email: akuntansi.bpkadkdr@gmail.com
+      // If someone else somehow is role 'pemda' in users, double verify they are the designated email
+      if (user.role === 'pemda' && username !== 'akuntansi.bpkadkdr@gmail.com') {
+        res.status(403).json({ success: false, error: 'Akses Pemda ditolak. Hanya email pengembang/admin yang diizinkan.' });
+        return;
+      }
+
+      // If user is SKPD, resolve their associated SKPD code dynamically from user_skpd mapping table
+      let allowedSkpds: { kode: string; nama: string }[] = [];
+      let matchedKode = user.kode_skpd;
+      let matchedNama = user.nama_skpd;
+
+      if (user.role === 'skpd') {
+        const userMappings = await db('user_skpd').where({ username: user.username });
+        const mappedCodes = userMappings.map(m => m.kode_skpd);
+        
+        if (mappedCodes.length > 0) {
+          const skpdRefs = await db('master_referensi')
+            .where({ jenis: 'skpd' })
+            .whereIn('kode', mappedCodes);
+          allowedSkpds = skpdRefs.map(s => ({ kode: s.kode, nama: s.uraian }));
+          
+          if (allowedSkpds.length > 0) {
+            matchedKode = allowedSkpds[0].kode;
+            matchedNama = allowedSkpds[0].nama;
+          }
+        }
+
+        // As fallback only, if no hard mapping exists, use fuzzy match
+        if (allowedSkpds.length === 0) {
+          const skpds = await db('master_referensi').where({ jenis: 'skpd' });
+          const match = findMatchingSkpd(username, skpds);
+          if (match) {
+            matchedKode = match.kode;
+            matchedNama = match.uraian;
+            allowedSkpds = [{ kode: match.kode, nama: match.uraian }];
+            
+            // Cache in user record
+            await db('users').where({ username }).update({
+              kode_skpd: matchedKode,
+              nama_skpd: matchedNama
+            });
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        user: {
+          username: user.username,
+          role: user.role,
+          kode_skpd: matchedKode,
+          nama_skpd: matchedNama,
+          allowed_skpds: allowedSkpds
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   return router;
 }
