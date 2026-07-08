@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HelpCircle, RefreshCw, Lock, Unlock, AlertCircle, Save, CheckCircle2 } from 'lucide-react';
+import { HelpCircle, RefreshCw, Lock, Unlock, AlertCircle, Save, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { DataPrognosisBelanja, DataPrognosisPendapatanPembiayaan } from '../types';
 
 interface PrognosisTabProps {
@@ -26,6 +26,55 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
   
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<string>('');
+
+  // Collapsed state for subkegiatan grouping
+  const [collapsedGroups, setCollapsedGroups] = useState<{ [kode: string]: boolean }>({});
+  
+  const isExpanded = (kode: string) => !collapsedGroups[kode];
+  const toggleGroup = (kode: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [kode]: !prev[kode] }));
+  };
+
+  // Group belanjaList by subkegiatan
+  const groupedBelanja = React.useMemo(() => {
+    const groups: { [key: string]: {
+      kode: string;
+      nama: string;
+      items: { item: any; originalIndex: number }[];
+      totalAnggaran: number;
+      totalRealisasi: number;
+      totalPrognosis: number;
+    }} = {};
+
+    belanjaList.forEach((item, index) => {
+      const key = item.kode_sub_kegiatan;
+      if (!groups[key]) {
+        groups[key] = {
+          kode: item.kode_sub_kegiatan,
+          nama: item.nama_sub_kegiatan,
+          items: [],
+          totalAnggaran: 0,
+          totalRealisasi: 0,
+          totalPrognosis: 0
+        };
+      }
+      groups[key].items.push({ item, originalIndex: index });
+      groups[key].totalAnggaran += item.anggaran || 0;
+      groups[key].totalRealisasi += item.realisasi || 0;
+      groups[key].totalPrognosis += item.nilai_prognosis || 0;
+    });
+
+    return Object.values(groups);
+  }, [belanjaList]);
+
+  const expandAll = () => setCollapsedGroups({});
+  const collapseAll = () => {
+    const newCollapsed: { [kode: string]: boolean } = {};
+    groupedBelanja.forEach(g => {
+      newCollapsed[g.kode] = true;
+    });
+    setCollapsedGroups(newCollapsed);
+  };
 
   const activeSkpdName = skpdList.find(s => s.kode === activeSkpd)?.uraian || 'SKPD';
 
@@ -333,19 +382,32 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
           {/* SECTION 1: PROGNOSIS BELANJA */}
           {!isBelanjaEmpty && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+              <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
                   Prognosis Belanja Daerah (Format 1)
                 </h4>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={expandAll}
+                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/80 px-2 py-1 rounded transition-colors cursor-pointer"
+                  >
+                    Buka Semua
+                  </button>
+                  <button
+                    onClick={collapseAll}
+                    className="text-[10px] font-bold text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200/80 px-2 py-1 rounded transition-colors cursor-pointer"
+                  >
+                    Tutup Semua
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto no-scrollbar">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-gray-100 text-gray-400 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
-                      <th className="py-3 px-4 font-semibold w-40">Sub Kegiatan</th>
-                      <th className="py-3 px-4 font-semibold w-40">Kode Rekening</th>
-                      <th className="py-3 px-4 font-semibold">Nama Rekening</th>
+                      <th className="py-3 px-4 font-semibold w-48">Kode Rekening</th>
+                      <th className="py-3 px-4 font-semibold">Nama Rekening Belanja</th>
                       <th className="py-3 px-4 font-semibold text-right w-36">Anggaran (Sms I)</th>
                       <th className="py-3 px-4 font-semibold text-right w-36">Realisasi (Sms I)</th>
                       <th className="py-3 px-4 font-semibold text-center w-36">Metode Prognosis</th>
@@ -354,57 +416,116 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
                     </tr>
                   </thead>
                   <tbody>
-                    {belanjaList.map((item, index) => {
-                      const sisaSms1 = item.anggaran - item.realisasi;
+                    {groupedBelanja.map((group) => {
+                      const expanded = isExpanded(group.kode);
                       return (
-                        <tr key={`${item.kode_sub_kegiatan}-${item.kode_rekening}`} className="text-xs hover:bg-gray-50/30 border-b border-gray-100">
-                          <td className="py-2.5 px-4 font-mono text-gray-500 select-all truncate max-w-[150px]" title={item.kode_sub_kegiatan}>
-                            {item.kode_sub_kegiatan}
-                          </td>
-                          <td className="py-2.5 px-4 font-mono text-gray-500 select-all whitespace-nowrap">
-                            {item.kode_rekening}
-                          </td>
-                          <td className="py-2.5 px-4">
-                            <div className="max-w-[220px]">
-                              <p className="font-semibold text-gray-800 truncate" title={item.nama_rekening}>{item.nama_rekening}</p>
-                              <p className="text-[10px] text-gray-400 truncate mt-0.5" title={item.nama_sub_kegiatan}>{item.nama_sub_kegiatan}</p>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-4 text-right font-mono text-gray-700">
-                            {formatRupiah(item.anggaran)}
-                          </td>
-                          <td className="py-2.5 px-4 text-right font-mono text-gray-700">
-                            {formatRupiah(item.realisasi)}
-                          </td>
-                          <td className="py-2.5 px-4 text-center">
-                            <select
-                              id={`opsi-belanja-${index}`}
-                              disabled={isLocked}
-                              value={item.opsi_input}
-                              onChange={(e) => handleOptionChange('belanja', index, e.target.value as any)}
-                              className="bg-white border border-gray-200 rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400"
-                            >
-                              <option value="sisa">Sisa Anggaran</option>
-                              <option value="tambah_kurang">Tambah/Kurang</option>
-                              <option value="fix">Fix Angka</option>
-                            </select>
-                          </td>
-                          <td className="py-2.5 px-4 text-center">
-                            <input
-                              type="number"
-                              id={`nilai-belanja-${index}`}
-                              disabled={isLocked || item.opsi_input === 'sisa'}
-                              value={item.nilai}
-                              onChange={(e) => handleValueChange('belanja', index, e.target.value)}
-                              onBlur={() => handleBlurSave('belanja', index)}
-                              placeholder={item.opsi_input === 'sisa' ? 'N/A' : '0'}
-                              className="w-28 bg-white border border-gray-200 rounded px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400"
-                            />
-                          </td>
-                          <td className="py-2.5 px-4 text-right font-mono font-bold text-gray-900 bg-gray-50/50">
-                            {formatRupiah(item.nilai_prognosis)}
-                          </td>
-                        </tr>
+                        <React.Fragment key={`group-frag-${group.kode}`}>
+                          {/* Group Header Row */}
+                          <tr className="bg-gray-50/95 border-b border-gray-200">
+                            <td colSpan={7} className="p-3.5 align-middle">
+                              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3 w-full">
+                                <div className="flex items-start space-x-3 min-w-0 flex-1">
+                                  {/* Toggle Expand/Collapse */}
+                                  <button
+                                    onClick={() => toggleGroup(group.kode)}
+                                    className="mt-0.5 p-1 hover:bg-gray-200 text-gray-500 hover:text-gray-900 rounded transition-colors cursor-pointer flex-shrink-0"
+                                  >
+                                    {expanded ? (
+                                      <ChevronDown className="w-4 h-4" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center space-x-2 mb-1.5 flex-wrap gap-y-1">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase tracking-wider">
+                                        Sub-Kegiatan: {group.kode}
+                                      </span>
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600 border border-gray-150">
+                                        {group.items.length} Belanja
+                                      </span>
+                                    </div>
+                                    <p className="text-xs font-bold text-gray-900 whitespace-normal break-words leading-relaxed select-text">
+                                      {group.nama}
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                {/* Aggregated Totals under this subkegiatan */}
+                                <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-lg border border-gray-150 shadow-xs flex-shrink-0">
+                                  <div className="text-right">
+                                    <span className="block text-[8px] text-gray-400 font-bold uppercase tracking-wider animate-none">Anggaran</span>
+                                    <span className="font-mono text-[11px] font-bold text-gray-600">{formatRupiah(group.totalAnggaran)}</span>
+                                  </div>
+                                  <div className="h-6 w-px bg-gray-150" />
+                                  <div className="text-right">
+                                    <span className="block text-[8px] text-gray-400 font-bold uppercase tracking-wider animate-none">Realisasi</span>
+                                    <span className="font-mono text-[11px] font-bold text-gray-600">{formatRupiah(group.totalRealisasi)}</span>
+                                  </div>
+                                  <div className="h-6 w-px bg-gray-150" />
+                                  <div className="text-right">
+                                    <span className="block text-[8px] text-gray-400 font-bold uppercase tracking-wider animate-none">Prognosis Sms II</span>
+                                    <span className="font-mono text-[11px] font-extrabold text-emerald-700">{formatRupiah(group.totalPrognosis)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Child Rows (Belanja Items) */}
+                          {expanded && group.items.map(({ item, originalIndex }) => {
+                            return (
+                              <tr 
+                                key={`${item.kode_sub_kegiatan}-${item.kode_rekening}`} 
+                                className="text-xs hover:bg-gray-50/50 border-b border-gray-100 transition-colors"
+                              >
+                                <td className="py-3 px-4 font-mono text-gray-500 select-all whitespace-nowrap pl-7 flex items-center space-x-1">
+                                  <span className="text-gray-300 font-bold text-xs select-none">↳</span>
+                                  <span className="font-semibold text-[11px]">{item.kode_rekening}</span>
+                                </td>
+                                <td className="py-3 px-4 whitespace-normal break-words max-w-[280px]">
+                                  <div className="font-medium text-gray-800 leading-relaxed select-text">
+                                    {item.nama_rekening}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono text-gray-700">
+                                  {formatRupiah(item.anggaran)}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono text-gray-700">
+                                  {formatRupiah(item.realisasi)}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <select
+                                    id={`opsi-belanja-${originalIndex}`}
+                                    disabled={isLocked}
+                                    value={item.opsi_input}
+                                    onChange={(e) => handleOptionChange('belanja', originalIndex, e.target.value as any)}
+                                    className="bg-white border border-gray-250 rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400 cursor-pointer"
+                                  >
+                                    <option value="sisa">Sisa Anggaran</option>
+                                    <option value="tambah_kurang">Tambah/Kurang</option>
+                                    <option value="fix">Fix Angka</option>
+                                  </select>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <input
+                                    type="number"
+                                    id={`nilai-belanja-${originalIndex}`}
+                                    disabled={isLocked || item.opsi_input === 'sisa'}
+                                    value={item.nilai}
+                                    onChange={(e) => handleValueChange('belanja', originalIndex, e.target.value)}
+                                    onBlur={() => handleBlurSave('belanja', originalIndex)}
+                                    placeholder={item.opsi_input === 'sisa' ? 'N/A' : '0'}
+                                    className="w-28 bg-white border border-gray-250 rounded px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400"
+                                  />
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-bold text-gray-900 bg-gray-50/30">
+                                  {formatRupiah(item.nilai_prognosis)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
@@ -440,32 +561,32 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
                       const sisaSms1 = item.anggaran - item.realisasi;
                       return (
                         <tr key={item.kode_rekening} className="text-xs hover:bg-gray-50/30 border-b border-gray-100">
-                          <td className="py-2.5 px-4 font-mono text-gray-500 select-all whitespace-nowrap">
+                          <td className="py-3 px-4 font-mono text-gray-500 select-all whitespace-nowrap">
                             {item.kode_rekening}
                           </td>
-                          <td className="py-2.5 px-4">
-                            <p className="font-semibold text-gray-800 truncate max-w-xs" title={item.nama_rekening}>{item.nama_rekening}</p>
+                          <td className="py-3 px-4 whitespace-normal break-words max-w-[280px]">
+                            <p className="font-semibold text-gray-800 leading-relaxed" title={item.nama_rekening}>{item.nama_rekening}</p>
                           </td>
-                          <td className="py-2.5 px-4 text-right font-mono text-gray-700">
+                          <td className="py-3 px-4 text-right font-mono text-gray-700">
                             {formatRupiah(item.anggaran)}
                           </td>
-                          <td className="py-2.5 px-4 text-right font-mono text-gray-700">
+                          <td className="py-3 px-4 text-right font-mono text-gray-700">
                             {formatRupiah(item.realisasi)}
                           </td>
-                          <td className="py-2.5 px-4 text-center">
+                          <td className="py-3 px-4 text-center">
                             <select
                               id={`opsi-pend-${index}`}
                               disabled={isLocked}
                               value={item.opsi_input}
                               onChange={(e) => handleOptionChange('pend_pemb', index, e.target.value as any)}
-                              className="bg-white border border-gray-200 rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400"
+                              className="bg-white border border-gray-250 rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400 cursor-pointer"
                             >
                               <option value="sisa">Sisa Anggaran</option>
                               <option value="tambah_kurang">Tambah/Kurang</option>
                               <option value="fix">Fix Angka</option>
                             </select>
                           </td>
-                          <td className="py-2.5 px-4 text-center">
+                          <td className="py-3 px-4 text-center">
                             <input
                               type="number"
                               id={`nilai-pend-${index}`}
@@ -474,10 +595,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
                               onChange={(e) => handleValueChange('pend_pemb', index, e.target.value)}
                               onBlur={() => handleBlurSave('pend_pemb', index)}
                               placeholder={item.opsi_input === 'sisa' ? 'N/A' : '0'}
-                              className="w-32 bg-white border border-gray-200 rounded px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400"
+                              className="w-32 bg-white border border-gray-250 rounded px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-950 disabled:bg-gray-100 disabled:text-gray-400"
                             />
                           </td>
-                          <td className="py-2.5 px-4 text-right font-mono font-bold text-gray-900 bg-gray-50/50">
+                          <td className="py-3 px-4 text-right font-mono font-bold text-gray-900 bg-gray-50/30">
                             {formatRupiah(item.nilai_prognosis)}
                           </td>
                         </tr>
