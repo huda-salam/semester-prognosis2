@@ -390,6 +390,81 @@ export function createApiRouter(): Router {
   });
 
   /**
+   * GET /api/admin/skpd-validation-status
+   * Retrieve validation status for all SKPDs
+   */
+  router.get('/admin/skpd-validation-status', async (req: Request, res: Response): Promise<void> => {
+    try {
+      const skpds = await db('master_referensi')
+        .where({ jenis: 'skpd' })
+        .orderBy('kode', 'asc');
+
+      const belanjaStatus = await db('data_prognosis_belanja')
+        .select('kode_skpd', 'status', 'locked')
+        .groupBy('kode_skpd', 'status', 'locked');
+
+      const pendStatus = await db('data_prognosis_pendapatan_pembiayaan')
+        .select('kode_skpd', 'status', 'locked')
+        .groupBy('kode_skpd', 'status', 'locked');
+
+      const belanjaCounts = await db('data_prognosis_belanja')
+        .select('kode_skpd')
+        .count('* as count')
+        .groupBy('kode_skpd');
+
+      const pendCounts = await db('data_prognosis_pendapatan_pembiayaan')
+        .select('kode_skpd')
+        .count('* as count')
+        .groupBy('kode_skpd');
+
+      const statusMap = new Map<string, { status: string; locked: boolean }>();
+      const countMap = new Map<string, number>();
+
+      for (const b of belanjaStatus) {
+        if (b.locked) {
+          statusMap.set(b.kode_skpd, { status: 'submitted', locked: true });
+        } else if (!statusMap.has(b.kode_skpd)) {
+          statusMap.set(b.kode_skpd, { status: b.status, locked: false });
+        }
+      }
+
+      for (const p of pendStatus) {
+        if (p.locked) {
+          statusMap.set(p.kode_skpd, { status: 'submitted', locked: true });
+        } else if (!statusMap.has(p.kode_skpd)) {
+          statusMap.set(p.kode_skpd, { status: p.status, locked: false });
+        }
+      }
+
+      for (const b of belanjaCounts) {
+        countMap.set(b.kode_skpd, (countMap.get(b.kode_skpd) || 0) + Number(b.count));
+      }
+
+      for (const p of pendCounts) {
+        countMap.set(p.kode_skpd, (countMap.get(p.kode_skpd) || 0) + Number(p.count));
+      }
+
+      const result = skpds.map(s => {
+        const cached = statusMap.get(s.kode) || { status: 'draft', locked: false };
+        return {
+          kode: s.kode,
+          uraian: s.uraian,
+          status: cached.status,
+          locked: cached.locked ? 1 : 0,
+          total_records: countMap.get(s.kode) || 0
+        };
+      });
+
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
    * POST /api/admin/query
    * SQL client query runner for Pemda Admin
    */
