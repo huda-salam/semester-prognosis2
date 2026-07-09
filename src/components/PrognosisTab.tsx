@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HelpCircle, RefreshCw, Lock, Unlock, AlertCircle, Save, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { DataPrognosisBelanja, DataPrognosisPendapatanPembiayaan } from '../types';
+import { getApiUrl } from '../utils/api';
 
 interface PrognosisTabProps {
   role: 'skpd' | 'pemda';
@@ -83,7 +84,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
     setLoading(true);
     setSaveStatus('');
     try {
-      const res = await fetch(`/api/prognosis?kode_skpd=${activeSkpd}&tahun=2026`, {
+      const res = await fetch(getApiUrl(`/api/prognosis?kode_skpd=${activeSkpd}&tahun=2026`), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
         }
@@ -209,7 +210,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
 
   const saveDraftBelanja = async (item: any) => {
     try {
-      const res = await fetch('/api/prognosis/update-belanja', {
+      const res = await fetch(getApiUrl('/api/prognosis/update-belanja'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -238,7 +239,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
 
   const saveDraftPendPemb = async (item: any) => {
     try {
-      const res = await fetch('/api/prognosis/update-pend-pemb', {
+      const res = await fetch(getApiUrl('/api/prognosis/update-pend-pemb'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -268,7 +269,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
   const handleSubmitPrognosis = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch('/api/prognosis/submit', {
+      const res = await fetch(getApiUrl('/api/prognosis/submit'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -295,7 +296,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
   const handleUnlockPrognosis = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch('/api/prognosis/unlock', {
+      const res = await fetch(getApiUrl('/api/prognosis/unlock'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

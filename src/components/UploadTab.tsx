@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, CheckCircle, AlertTriangle, HelpCircle, RefreshCw } from 'lucide-react';
+import { getApiUrl } from '../utils/api';
 
 interface UploadTabProps {
   role: 'skpd' | 'pemda';
@@ -117,7 +118,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             };
           }
 
-          const response = await fetch(url, {
+          const response = await fetch(getApiUrl(url), {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',

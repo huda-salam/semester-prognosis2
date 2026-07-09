@@ -7,6 +7,7 @@ import { ReportTab } from './components/ReportTab';
 import { PrognosisTab } from './components/PrognosisTab';
 import { AdminTab } from './components/AdminTab';
 import { LoginForm } from './components/LoginForm';
+import { getApiUrl } from './utils/api';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<{
@@ -36,7 +37,7 @@ export default function App() {
   const fetchSkpds = async () => {
     try {
       setLoadingSkpd(true);
-      const res = await fetch('/api/master?jenis=skpd', {
+      const res = await fetch(getApiUrl('/api/master?jenis=skpd'), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
         }
@@ -101,7 +102,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/logout', { method: 'POST' });
+      await fetch(getApiUrl('/api/logout'), { method: 'POST' });
     } catch (e) {
       console.error('Logout error:', e);
     }

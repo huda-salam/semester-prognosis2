@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Building2, Shield, UserCircle, Key, Lock, Mail, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { getApiUrl } from '../utils/api';
 
 interface LoginFormProps {
   onLoginSuccess: (user: {
@@ -29,7 +30,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
     setError('');
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch(getApiUrl('/api/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

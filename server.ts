@@ -73,11 +73,30 @@ async function startServer() {
     }
   });
 
-  app.use('/api/login', authLimiter);
-  app.use('/api/', generalLimiter);
+  // Support dynamic subpath / base path routing
+  const BASE_PATH = process.env.BASE_PATH || '/';
+  let cleanBasePath = BASE_PATH;
+  if (!cleanBasePath.startsWith('/')) {
+    cleanBasePath = '/' + cleanBasePath;
+  }
+  if (cleanBasePath.endsWith('/')) {
+    cleanBasePath = cleanBasePath.slice(0, -1);
+  }
+
+  app.use(`${cleanBasePath}/api/login`, authLimiter);
+  app.use(`${cleanBasePath}/api/`, generalLimiter);
+
+  // Also mount at raw root for fallback
+  if (cleanBasePath !== '') {
+    app.use('/api/login', authLimiter);
+    app.use('/api/', generalLimiter);
+  }
 
   // 4. API Router mounting BEFORE Vite
-  app.use('/api', createApiRouter());
+  app.use(`${cleanBasePath}/api`, createApiRouter());
+  if (cleanBasePath !== '') {
+    app.use('/api', createApiRouter());
+  }
 
   // 4. Vite middleware for React Frontend or Production serving
   if (process.env.NODE_ENV !== 'production') {
@@ -88,10 +107,17 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    console.log('Starting production server serving built static assets...');
+    console.log(`Starting production server serving built static assets under base path: ${cleanBasePath || '/'}`);
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
     
+    if (cleanBasePath !== '') {
+      app.use(cleanBasePath, express.static(distPath));
+      app.get(`${cleanBasePath}*`, (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+    
+    app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });

@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   X
 } from 'lucide-react';
+import { getApiUrl } from '../utils/api';
 
 interface AdminTabProps {
   onUploadSuccess: () => void;
@@ -68,7 +69,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
   const fetchDbSummary = async () => {
     setLoadingSummary(true);
     try {
-      const res = await fetch('/api/admin/master-summary', {
+      const res = await fetch(getApiUrl('/api/admin/master-summary'), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
         }
@@ -89,7 +90,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     setLoadingValidation(true);
     setValidationError('');
     try {
-      const res = await fetch('/api/admin/skpd-validation-status', {
+      const res = await fetch(getApiUrl('/api/admin/skpd-validation-status'), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
         }
@@ -116,7 +117,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     if (actionInProgress) return;
     setActionInProgress(kodeSkpd);
     try {
-      const res = await fetch('/api/prognosis/unlock', {
+      const res = await fetch(getApiUrl('/api/prognosis/unlock'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -146,7 +147,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     if (actionInProgress) return;
     setActionInProgress(kodeSkpd);
     try {
-      const res = await fetch('/api/prognosis/submit', {
+      const res = await fetch(getApiUrl('/api/prognosis/submit'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -200,7 +201,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     setCurrentPage(1);
 
     try {
-      const res = await fetch('/api/admin/query', {
+      const res = await fetch(getApiUrl('/api/admin/query'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -270,7 +271,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
           }
           const base64 = btoa(binary);
 
-          const response = await fetch('/api/upload-master', {
+          const response = await fetch(getApiUrl('/api/upload-master'), {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',

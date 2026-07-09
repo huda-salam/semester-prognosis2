@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Folder, ChevronRight, ChevronDown, Table, FileText, Download, ListFilter, AlertCircle } from 'lucide-react';
 import { LraReportItem } from '../types';
+import { getApiUrl } from '../utils/api';
 
 interface ReportTabProps {
   role: 'skpd' | 'pemda';
@@ -55,7 +56,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
         url = `/api/report/pemda?tahun=${tahun}&bulan=${bulan}`;
       }
 
-      const res = await fetch(url, {
+      const res = await fetch(getApiUrl(url), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
         }
