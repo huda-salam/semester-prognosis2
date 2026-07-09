@@ -2,6 +2,10 @@ import knex from 'knex';
 import path from 'path';
 import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
+
+// Load env variables
+dotenv.config();
 
 // Local SQLite database file location
 const dbPath = path.resolve(process.cwd(), 'data.db');
@@ -22,26 +26,62 @@ async function migrateUserPasswordsToHash() {
   }
 }
 
-export const db = knex({
-  client: 'sqlite3',
-  connection: {
-    filename: dbPath,
-  },
-  useNullAsDefault: true,
-  pool: {
-    afterCreate: (conn: any, cb: any) => {
-      // Enable foreign keys for SQLite
-      conn.run('PRAGMA foreign_keys = ON', cb);
+const dbClient = process.env.DB_CLIENT || 'sqlite3';
+
+let knexConfig: any;
+
+if (dbClient === 'pg' || dbClient === 'postgresql' || dbClient === 'postgres') {
+  console.log('Database Client Configured to PostgreSQL');
+  knexConfig = {
+    client: 'pg',
+    connection: process.env.DATABASE_URL || {
+      host: process.env.DB_HOST || '127.0.0.1',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_DATABASE || 'prognosis',
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    },
+    pool: { min: 2, max: 10 }
+  };
+} else if (dbClient === 'mysql' || dbClient === 'mysql2') {
+  console.log('Database Client Configured to MySQL');
+  knexConfig = {
+    client: 'mysql2',
+    connection: process.env.DATABASE_URL || {
+      host: process.env.DB_HOST || '127.0.0.1',
+      port: parseInt(process.env.DB_PORT || '3306', 10),
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_DATABASE || 'prognosis',
+    },
+    pool: { min: 2, max: 10 }
+  };
+} else {
+  console.log('Database Client Configured to SQLite:', dbPath);
+  knexConfig = {
+    client: 'sqlite3',
+    connection: {
+      filename: dbPath,
+    },
+    useNullAsDefault: true,
+    pool: {
+      afterCreate: (conn: any, cb: any) => {
+        // Enable foreign keys for SQLite
+        conn.run('PRAGMA foreign_keys = ON', cb);
+      }
     }
-  }
-});
+  };
+}
+
+export const db = knex(knexConfig);
 
 /**
  * Initializes the database tables if they do not exist.
  * This runs on app startup to guarantee tables are ready without manual migration commands.
  */
 export async function initializeDatabase() {
-  console.log('Initializing database schema at:', dbPath);
+  console.log('Initializing database schema...');
 
   // 1. Table: master_referensi
   const hasMasterTable = await db.schema.hasTable('master_referensi');
