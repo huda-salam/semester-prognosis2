@@ -25,7 +25,7 @@ export default function App() {
   });
 
   const [role, setRole] = useState<'skpd' | 'pemda'>(currentUser?.role || 'skpd');
-  const [activeTab, setActiveTab] = useState<'upload' | 'report' | 'prognosis' | 'admin'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'report' | 'prognosis' | 'admin'>('prognosis');
   const [skpdList, setSkpdList] = useState<{ kode: string; uraian: string }[]>([]);
   const [activeSkpd, setActiveSkpd] = useState<string>('');
   const [loadingSkpd, setLoadingSkpd] = useState<boolean>(true);
@@ -77,6 +77,14 @@ export default function App() {
     fetchSkpds();
   }, [refreshTrigger, currentUser]);
 
+  const showUploadTab = role === 'pemda' || (role === 'skpd' && (import.meta as any).env.VITE_SHOW_SKPD_LRA_UPLOAD === 'true');
+
+  useEffect(() => {
+    if (activeTab === 'upload' && !showUploadTab) {
+      setActiveTab('prognosis');
+    }
+  }, [role, showUploadTab, activeTab]);
+
   const handleLoginSuccess = (user: any) => {
     localStorage.setItem('currentUser', JSON.stringify(user));
     setCurrentUser(user);
@@ -84,21 +92,21 @@ export default function App() {
     if (user.role === 'skpd' && user.kode_skpd) {
       setActiveSkpd(user.kode_skpd);
     }
-    setActiveTab('upload');
+    setActiveTab('prognosis');
   };
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
     setCurrentUser(null);
-    setActiveTab('upload');
+    setActiveTab('prognosis');
   };
 
   const activeSkpdUraian = skpdList.find(s => s.kode === activeSkpd)?.uraian || 'SKPD';
 
   const tabs = [
-    { id: 'upload', label: 'Upload Excel LRA', icon: UploadCloud },
-    { id: 'report', label: 'Rekapitulasi LRA', icon: FileText },
     { id: 'prognosis', label: 'Prognosis Semester II', icon: BarChart2 },
+    ...(showUploadTab ? [{ id: 'upload', label: 'Upload Excel LRA', icon: UploadCloud }] : []),
+    { id: 'report', label: 'Rekapitulasi LRA', icon: FileText },
     ...(role === 'pemda' ? [{ id: 'admin', label: 'Admin & SQL Client', icon: Server }] : [])
   ];
 
@@ -115,7 +123,7 @@ export default function App() {
         onChangeRole={(newRole) => {
           setRole(newRole);
           if (newRole === 'skpd' && activeTab === 'admin') {
-            setActiveTab('upload');
+            setActiveTab('prognosis');
           }
         }}
         activeSkpd={activeSkpd}
@@ -229,7 +237,7 @@ export default function App() {
       {/* Footer Branding */}
       <footer className="bg-white border-t border-gray-150 py-6 text-center text-xs text-gray-400 mt-12">
         <p className="font-semibold text-gray-500">Badan Pengelolaan Keuangan dan Aset Daerah (BPKAD) Kabupaten Kediri</p>
-        <p className="text-[10px] text-gray-400 mt-1">Sistem Uploader & Prognosis Realisasi LRA © 2026</p>
+        <p className="text-[10px] text-gray-400 mt-1">Sistem Laporan Semester dan Prognosis Realisasi LRA © 2026</p>
       </footer>
 
     </div>

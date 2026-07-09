@@ -26,6 +26,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
   
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<string>('');
+  const [showGuide, setShowGuide] = useState<boolean>(true);
 
   // Collapsed state for subkegiatan grouping
   const [collapsedGroups, setCollapsedGroups] = useState<{ [kode: string]: boolean }>({});
@@ -379,6 +380,60 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
       ) : (
         <div className="space-y-8">
           
+          {/* Petunjuk Pengisian Accordion */}
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <button
+              onClick={() => setShowGuide(!showGuide)}
+              className="w-full px-5 py-4 flex items-center justify-between bg-gray-50/50 hover:bg-gray-50 transition-colors text-left cursor-pointer"
+            >
+              <div className="flex items-center space-x-2 text-gray-700">
+                <HelpCircle className="w-4 h-4 text-indigo-600" />
+                <span className="text-xs font-bold uppercase tracking-wider">Petunjuk Pengisian & Aturan Formula Perhitungan Prognosis</span>
+              </div>
+              {showGuide ? (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+            
+            {showGuide && (
+              <div className="p-6 border-t border-gray-100 bg-white space-y-4">
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Penyusunan prognosis Semester II dihitung secara otomatis berdasarkan pilihan metode pengisian untuk masing-masing kode rekening belanja maupun pendapatan/pembiayaan. Pilih metode yang sesuai untuk masing-masing komponen rekening:
+                </p>
+                <div className="overflow-x-auto no-scrollbar">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-gray-400 font-bold text-[10px] uppercase tracking-wider">
+                        <th className="pb-2 w-48 font-semibold">Metode Opsi Input</th>
+                        <th className="pb-2 font-semibold">Formula Perhitungan Matematika</th>
+                        <th className="pb-2 font-semibold">Deskripsi Kasus Penggunaan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-gray-600 leading-relaxed">
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2.5 font-semibold text-gray-800">Sisa Anggaran</td>
+                        <td className="py-2.5 font-mono text-indigo-600 font-semibold">Anggaran - Realisasi</td>
+                        <td className="py-2.5 text-gray-500">Digunakan jika realisasi Semester II diprediksi akan menyerap seluruh sisa anggaran yang tersisa secara penuh.</td>
+                      </tr>
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2.5 font-semibold text-gray-800">Tambah/Kurang</td>
+                        <td className="py-2.5 font-mono text-indigo-600 font-semibold">Anggaran - Realisasi + Delta</td>
+                        <td className="py-2.5 text-gray-500">Digunakan untuk penyesuaian parsial (tambah positif atau kurangi negatif) dari sisa sisa anggaran Semester I.</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 font-semibold text-gray-800">Fix Angka</td>
+                        <td className="py-2.5 font-mono text-indigo-600 font-semibold">Target Nilai Mutlak</td>
+                        <td className="py-2.5 text-gray-500">Menetapkan nilai target realisasi Semester II secara eksplisit mutlak bebas tanpa memperhitungkan selisih sisa anggaran.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+          
           {/* SECTION 1: PROGNOSIS BELANJA */}
           {!isBelanjaEmpty && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -610,41 +665,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
             </div>
           )}
 
-          {/* Formulas Explanations Guidelines */}
-          <div className="bg-gray-50 border border-gray-100 rounded-xl p-6">
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center space-x-1.5 mb-3">
-              <HelpCircle className="w-4 h-4 text-gray-400" />
-              <span>Aturan Formula Perhitungan Prognosis Semester II</span>
-            </h4>
-            <div className="overflow-x-auto no-scrollbar">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-gray-200 text-gray-500 font-semibold">
-                    <th className="pb-2 w-48">Metode Opsi Input</th>
-                    <th className="pb-2">Formula Perhitungan Matematika</th>
-                    <th className="pb-2">Deskripsi Kasus Penggunaan</th>
-                  </tr>
-                </thead>
-                <tbody className="text-gray-600 leading-relaxed">
-                  <tr className="border-b border-gray-100">
-                    <td className="py-2 font-semibold text-gray-850">Sisa Anggaran</td>
-                    <td className="py-2 font-mono text-gray-950">Anggaran - Realisasi</td>
-                    <td className="py-2">Digunakan jika realisasi Semester II diprediksi akan menyerap seluruh sisa anggaran yang tersisa secara penuh.</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="py-2 font-semibold text-gray-850">Tambah/Kurang</td>
-                    <td className="py-2 font-mono text-gray-950">Anggaran - Realisasi + Delta</td>
-                    <td className="py-2">Digunakan untuk penyesuaian parsial (tambah positif atau kurangi negatif) dari sisa sisa anggaran Semester I.</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 font-semibold text-gray-850">Fix Angka</td>
-                    <td className="py-2 font-mono text-gray-950">Target Nilai Mutlak</td>
-                    <td className="py-2">Menetapkan nilai target realisasi Semester II secara eksplisit mutlak bebas tanpa memperhitungkan selisih sisa anggaran.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Petunjuk pengisian dipindahkan ke bagian atas */}
 
         </div>
       )}

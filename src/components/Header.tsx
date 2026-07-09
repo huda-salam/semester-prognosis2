@@ -59,8 +59,8 @@ export const Header: React.FC<HeaderProps> = ({
               <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-tight text-gray-950 uppercase">
-                Uploader & Rekap LRA
+              <h1 className="text-sm font-bold tracking-tight text-gray-950 uppercase">
+                Laporan Semester dan Prognosis
               </h1>
               <p className="text-[10px] text-gray-500 font-medium tracking-wider">
                 PEMDA KABUPATEN KEDIRI • TA 2026
