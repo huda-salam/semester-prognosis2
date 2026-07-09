@@ -50,7 +50,16 @@ async function startServer() {
     next();
   });
 
-  // 3. Rate Limiting
+  // 3. Normalise and parse BASE_PATH or VITE_BASE_PATH
+  let BASE_PATH = (process.env.BASE_PATH || process.env.VITE_BASE_PATH || '').trim();
+  if (BASE_PATH && !BASE_PATH.startsWith('/')) {
+    BASE_PATH = '/' + BASE_PATH;
+  }
+  if (BASE_PATH.endsWith('/')) {
+    BASE_PATH = BASE_PATH.slice(0, -1);
+  }
+
+  // 4. Rate Limiting
   const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     limit: 1000,
@@ -73,13 +82,20 @@ async function startServer() {
     }
   });
 
+  if (BASE_PATH) {
+    app.use(`${BASE_PATH}/api/login`, authLimiter);
+    app.use(`${BASE_PATH}/api/`, generalLimiter);
+  }
   app.use('/api/login', authLimiter);
   app.use('/api/', generalLimiter);
 
-  // 4. API Router mounting BEFORE Vite
+  // 5. API Router mounting BEFORE Vite
+  if (BASE_PATH) {
+    app.use(`${BASE_PATH}/api`, createApiRouter());
+  }
   app.use('/api', createApiRouter());
 
-  // 4. Vite middleware for React Frontend or Production serving
+  // 6. Vite middleware for React Frontend or Production serving
   if (process.env.NODE_ENV !== 'production') {
     console.log('Starting development server with Vite middleware...');
     const vite = await createViteServer({
@@ -88,10 +104,18 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    console.log('Starting production server serving built static assets...');
+    console.log(`Starting production server serving built static assets under subpath [${BASE_PATH || '/'}]...`);
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
     
+    if (BASE_PATH) {
+      app.use(BASE_PATH, express.static(distPath));
+      app.get(`${BASE_PATH}/*`, (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+
+    // Fallback standard root serving
+    app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
@@ -100,7 +124,7 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`=========================================`);
     console.log(` LRA UPLOADER & REKAP RUNNING AT:        `);
-    console.log(` http://localhost:${PORT}                `);
+    console.log(` http://localhost:${PORT}${BASE_PATH}    `);
     console.log(`=========================================`);
   });
 }
