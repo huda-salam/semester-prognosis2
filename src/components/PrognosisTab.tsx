@@ -83,7 +83,11 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
     setLoading(true);
     setSaveStatus('');
     try {
-      const res = await fetch(`/api/prognosis?kode_skpd=${activeSkpd}&tahun=2026`);
+      const res = await fetch(`/api/prognosis?kode_skpd=${activeSkpd}&tahun=2026`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
       const result = await res.json();
       if (res.ok && result.success) {
         setBelanjaList(result.data.belanja || []);
@@ -207,7 +211,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
     try {
       const res = await fetch('/api/prognosis/update-belanja', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
           kode_sub_kegiatan: item.kode_sub_kegiatan,
@@ -233,7 +240,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
     try {
       const res = await fetch('/api/prognosis/update-pend-pemb', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
           kode_rekening: item.kode_rekening,
@@ -260,7 +270,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
     try {
       const res = await fetch('/api/prognosis/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
           user: activeSkpdName
@@ -284,7 +297,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
     try {
       const res = await fetch('/api/prognosis/unlock', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
           user: 'PEMDA Admin'

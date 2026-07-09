@@ -68,7 +68,11 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
   const fetchDbSummary = async () => {
     setLoadingSummary(true);
     try {
-      const res = await fetch('/api/admin/master-summary');
+      const res = await fetch('/api/admin/master-summary', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
       const result = await res.json();
       if (res.ok && result.success) {
         setSummary(result.data);
@@ -85,7 +89,11 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     setLoadingValidation(true);
     setValidationError('');
     try {
-      const res = await fetch('/api/admin/skpd-validation-status');
+      const res = await fetch('/api/admin/skpd-validation-status', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
       const result = await res.json();
       if (res.ok && result.success) {
         setSkpdStatusList(result.data || []);
@@ -110,7 +118,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     try {
       const res = await fetch('/api/prognosis/unlock', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({
           kode_skpd: kodeSkpd,
           user: 'PEMDA Admin'
@@ -137,7 +148,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     try {
       const res = await fetch('/api/prognosis/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({
           kode_skpd: kodeSkpd,
           user: 'PEMDA Admin'
@@ -188,7 +202,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     try {
       const res = await fetch('/api/admin/query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({ sql: sqlToRun })
       });
       const result = await res.json();
@@ -255,7 +272,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
 
           const response = await fetch('/api/upload-master', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+            },
             body: JSON.stringify({ fileBase64: base64, user: 'PEMDA Admin' })
           });
 

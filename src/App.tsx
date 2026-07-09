@@ -36,7 +36,11 @@ export default function App() {
   const fetchSkpds = async () => {
     try {
       setLoadingSkpd(true);
-      const res = await fetch('/api/master?jenis=skpd');
+      const res = await fetch('/api/master?jenis=skpd', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
       const result = await res.json();
       if (res.ok && result.success) {
         const data = result.data || [];
@@ -95,8 +99,14 @@ export default function App() {
     setActiveTab('prognosis');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('token');
     setCurrentUser(null);
     setActiveTab('prognosis');
   };

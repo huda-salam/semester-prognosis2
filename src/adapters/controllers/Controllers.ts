@@ -2,6 +2,83 @@ import { Request, Response, Router } from 'express';
 import { db } from '../../db/knex';
 import { KnexMasterRepository, KnexLraRepository, KnexPrognosisRepository } from '../repositories/KnexRepositories';
 import { MasterUseCase, LraUseCase, PrognosisUseCase } from '../../domain/usecases';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'bpkad-kediri-secret-key-prognosis-2026';
+
+// Middleware: Authenticate User from Cookie or Authorization Header
+function authenticateUser(req: Request, res: Response, next: () => void) {
+  try {
+    let token = req.cookies?.token;
+
+    // Fallback to Authorization Header
+    if (!token && req.headers.authorization) {
+      const parts = req.headers.authorization.split(' ');
+      if (parts[0] === 'Bearer' && parts[1]) {
+        token = parts[1];
+      }
+    }
+
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Unauthorized: Token tidak ditemukan. Harap login terlebih dahulu.' });
+      return;
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    (req as any).user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({ success: false, error: 'Unauthorized: Sesi tidak valid atau telah berakhir. Harap login kembali.' });
+  }
+}
+
+// Middleware: Require specific roles
+function requireRole(roles: string[]) {
+  return (req: Request, res: Response, next: () => void) => {
+    const user = (req as any).user;
+    if (!user || !roles.includes(user.role)) {
+      res.status(403).json({ success: false, error: 'Forbidden: Anda tidak memiliki akses untuk menu ini.' });
+      return;
+    }
+    next();
+  };
+}
+
+// Middleware: Verify SKPD ownership (Data isolation per SKPD)
+function checkSkpdOwnership(req: Request, res: Response, next: () => void) {
+  const user = (req as any).user;
+  if (!user) {
+    res.status(401).json({ success: false, error: 'Unauthorized: Sesi tidak ditemukan.' });
+    return;
+  }
+
+  // Pemda/Admin has full access to all SKPD data
+  if (user.role === 'pemda') {
+    next();
+    return;
+  }
+
+  // Determine target SKPD code from query parameter or request body
+  const targetSkpd = (req.query.kode_skpd || req.body.kode_skpd || req.body.kode_skpd_uploader) as string;
+
+  if (!targetSkpd) {
+    next();
+    return;
+  }
+
+  // Check if targetSkpd is in user's allowed list
+  const allowedCodes = (user.allowed_skpds || []).map((s: any) => s.kode);
+  
+  if (user.kode_skpd === targetSkpd || allowedCodes.includes(targetSkpd)) {
+    next();
+  } else {
+    res.status(403).json({ 
+      success: false, 
+      error: `Forbidden: SKPD Anda tidak memiliki izin untuk mengolah atau melihat data SKPD tujuan (${targetSkpd}).` 
+    });
+  }
+}
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -20,7 +97,7 @@ export function createApiRouter(): Router {
    * GET /api/master
    * Get all master references
    */
-  router.get('/master', async (req: Request, res: Response): Promise<void> => {
+  router.get('/master', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
     try {
       const { jenis } = req.query;
       let data;
@@ -39,15 +116,31 @@ export function createApiRouter(): Router {
    * POST /api/upload-master
    * Upload master reference data from Excel
    */
-  router.post('/upload-master', async (req: Request, res: Response): Promise<void> => {
+  router.post('/upload-master', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
     try {
       const { fileBase64 } = req.body;
       if (!fileBase64) {
-        res.status(400).json({ success: false, error: 'File data is required (base64)' });
+        res.status(400).json({ success: false, error: 'Data file (base64) wajib dikirimkan.' });
         return;
       }
 
       const buffer = Buffer.from(fileBase64, 'base64');
+
+      // 1. File Size Validation
+      const maxSizeBytes = 20 * 1024 * 1024; // 20 MB
+      if (buffer.length > maxSizeBytes) {
+        res.status(400).json({ success: false, error: 'Ukuran file terlalu besar. Maksimum 20 MB.' });
+        return;
+      }
+
+      // 2. File Type / Magic Number Validation (Excel: .xlsx starts with PK.. or .xls starts with D0 CF 11 E0)
+      const isZip = buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04;
+      const isOls = buffer[0] === 0xD0 && buffer[1] === 0xCF && buffer[2] === 0x11 && buffer[3] === 0xE0;
+      if (!isZip && !isOls) {
+        res.status(400).json({ success: false, error: 'Format berkas tidak valid. Hanya berkas Excel (.xlsx atau .xls) yang diperbolehkan.' });
+        return;
+      }
+
       const result = await masterUseCase.parseAndSaveMasterExcel(buffer);
       res.json(result);
     } catch (error: any) {
@@ -59,7 +152,7 @@ export function createApiRouter(): Router {
    * POST /api/upload-lra
    * Upload LRA Excel based on format 1, 2, or 3
    */
-  router.post('/upload-lra', async (req: Request, res: Response): Promise<void> => {
+  router.post('/upload-lra', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
     try {
       const {
         fileBase64,
@@ -82,6 +175,22 @@ export function createApiRouter(): Router {
       }
 
       const buffer = Buffer.from(fileBase64, 'base64');
+
+      // 1. File Size Validation
+      const maxSizeBytes = 20 * 1024 * 1024; // 20 MB
+      if (buffer.length > maxSizeBytes) {
+        res.status(400).json({ success: false, error: 'Ukuran file terlalu besar. Maksimum 20 MB.' });
+        return;
+      }
+
+      // 2. File Type / Magic Number Validation (Excel: .xlsx starts with PK.. or .xls starts with D0 CF 11 E0)
+      const isZip = buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04;
+      const isOls = buffer[0] === 0xD0 && buffer[1] === 0xCF && buffer[2] === 0x11 && buffer[3] === 0xE0;
+      if (!isZip && !isOls) {
+        res.status(400).json({ success: false, error: 'Format berkas tidak valid. Hanya berkas Excel (.xlsx atau .xls) yang diperbolehkan.' });
+        return;
+      }
+
       const yr = Number(tahun);
       const mth = Number(bulan || 6); // default to June if not provided
 
@@ -133,7 +242,7 @@ export function createApiRouter(): Router {
    * GET /api/report/skpd
    * Fetch hierarchical report for an SKPD
    */
-  router.get('/report/skpd', async (req: Request, res: Response): Promise<void> => {
+  router.get('/report/skpd', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
     try {
       const { tahun, bulan, kode_skpd } = req.query;
       if (!tahun || !bulan || !kode_skpd) {
@@ -156,7 +265,7 @@ export function createApiRouter(): Router {
    * GET /api/report/pemda
    * Fetch level Pemda rekap report (aggregated at level 3)
    */
-  router.get('/report/pemda', async (req: Request, res: Response): Promise<void> => {
+  router.get('/report/pemda', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
     try {
       const { tahun, bulan } = req.query;
       if (!tahun || !bulan) {
@@ -175,7 +284,7 @@ export function createApiRouter(): Router {
    * GET /api/prognosis
    * Fetch prognosis workspace for SKPD
    */
-  router.get('/prognosis', async (req: Request, res: Response): Promise<void> => {
+  router.get('/prognosis', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
     try {
       const { kode_skpd, tahun } = req.query;
       if (!kode_skpd || !tahun) {
@@ -237,7 +346,7 @@ export function createApiRouter(): Router {
   /**
    * POST /api/prognosis/update-belanja
    */
-  router.post('/prognosis/update-belanja', async (req: Request, res: Response): Promise<void> => {
+  router.post('/prognosis/update-belanja', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
     try {
       const {
         kode_skpd,
@@ -282,7 +391,7 @@ export function createApiRouter(): Router {
   /**
    * POST /api/prognosis/update-pend-pemb
    */
-  router.post('/prognosis/update-pend-pemb', async (req: Request, res: Response): Promise<void> => {
+  router.post('/prognosis/update-pend-pemb', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
     try {
       const {
         kode_skpd,
@@ -326,7 +435,7 @@ export function createApiRouter(): Router {
    * POST /api/prognosis/submit
    * Locks the prognosis for SKPD
    */
-  router.post('/prognosis/submit', async (req: Request, res: Response): Promise<void> => {
+  router.post('/prognosis/submit', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
     try {
       const { kode_skpd, user } = req.body;
       if (!kode_skpd) {
@@ -345,7 +454,7 @@ export function createApiRouter(): Router {
    * POST /api/prognosis/unlock
    * Admin/Pemda unlocks the prognosis for SKPD
    */
-  router.post('/prognosis/unlock', async (req: Request, res: Response): Promise<void> => {
+  router.post('/prognosis/unlock', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
     try {
       const { kode_skpd, user } = req.body;
       if (!kode_skpd) {
@@ -364,7 +473,7 @@ export function createApiRouter(): Router {
    * GET /api/admin/master-summary
    * Retrieve total record counts in database for admin overview
    */
-  router.get('/admin/master-summary', async (req: Request, res: Response): Promise<void> => {
+  router.get('/admin/master-summary', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
     try {
       const referenceCounts = await db('master_referensi')
         .select('jenis')
@@ -393,7 +502,7 @@ export function createApiRouter(): Router {
    * GET /api/admin/skpd-validation-status
    * Retrieve validation status for all SKPDs
    */
-  router.get('/admin/skpd-validation-status', async (req: Request, res: Response): Promise<void> => {
+  router.get('/admin/skpd-validation-status', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
     try {
       const skpds = await db('master_referensi')
         .where({ jenis: 'skpd' })
@@ -468,7 +577,14 @@ export function createApiRouter(): Router {
    * POST /api/admin/query
    * SQL client query runner for Pemda Admin
    */
-  router.post('/admin/query', async (req: Request, res: Response): Promise<void> => {
+  router.post('/api/admin/query', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
+    // Note: Mount path is '/admin/query' because router is mounted at '/api'
+    // Inside this function, since the router is mounted at '/api', the relative path inside the router is '/admin/query'.
+    // Let's keep the relative path as '/admin/query'.
+  });
+
+  // Re-map actual relative routes
+  router.post('/admin/query', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
     try {
       const { sql } = req.body;
       if (!sql || typeof sql !== 'string') {
@@ -482,74 +598,31 @@ export function createApiRouter(): Router {
         return;
       }
 
+      // Check query constraint: "hanya izinkan query read-only untuk role admin, write bisa dilakukan jika logged ke google menggunakan akun saya"
+      const user = (req as any).user;
+      const isOwner = user?.username === 'akuntansi.bpkadkdr@gmail.com';
+
+      if (!isOwner) {
+        // Simple and robust parser for read-only checks
+        const trimmed = sql.trim().toLowerCase();
+        const isRead = trimmed.startsWith('select') || trimmed.startsWith('explain') || trimmed.startsWith('show') || trimmed.startsWith('pragma');
+        const hasWrite = /\b(insert|update|delete|drop|alter|create|replace|truncate|write|grant|revoke)\b/i.test(trimmed);
+
+        if (!isRead || hasWrite) {
+          res.status(403).json({ 
+            success: false, 
+            error: 'Akses ditolak: Hanya email akuntansi.bpkadkdr@gmail.com yang diizinkan untuk menjalankan query modifikasi (write/DDL/DML).' 
+          });
+          return;
+        }
+      }
+
       const result = await db.raw(sql);
       res.json({ success: true, data: result });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
     }
   });
-
-  /**
-   * Helper function to match a username to an SKPD from master reference data
-   */
-  function findMatchingSkpd(username: string, skpds: any[]): { kode: string; uraian: string } | null {
-    const uLower = username.toLowerCase().replace(/_/g, ' ').trim();
-    
-    // 1. Exact match
-    let match = skpds.find(s => s.uraian.toLowerCase() === uLower);
-    if (match) return { kode: match.kode, uraian: match.uraian };
-
-    // 2. Map abbreviations to standard words for fuzzy matching
-    const searchTerms: string[] = [uLower];
-    if (uLower === 'pendidikan') searchTerms.push('dinas pendidikan');
-    if (uLower === 'kesehatan') searchTerms.push('dinas kesehatan');
-    if (uLower === 'dpupr') searchTerms.push('pekerjaan umum', 'pupr');
-    if (uLower === 'dperkim') searchTerms.push('perumahan rakyat', 'kawasan permukiman', 'perkim');
-    if (uLower === 'satpolpp') searchTerms.push('satuan polisi pamong praja', 'satpol', 'pp');
-    if (uLower === 'bpbd') searchTerms.push('penanggulangan bencana', 'bpbd');
-    if (uLower === 'dinsos') searchTerms.push('sosial', 'dinsos');
-    if (uLower === 'disnaker') searchTerms.push('tenaga kerja', 'disnaker');
-    if (uLower === 'dlh') searchTerms.push('lingkungan hidup', 'dlh');
-    if (uLower === 'dispendukcapil') searchTerms.push('kependudukan', 'catatan sipil', 'dispenduk');
-    if (uLower === 'dishub') searchTerms.push('perhubungan', 'dishub');
-    if (uLower === 'kominfo') searchTerms.push('komunikasi', 'informatika', 'kominfo');
-    if (uLower === 'dpmptsp') searchTerms.push('penanaman modal', 'dpmptsp');
-    if (uLower === 'bappeda') searchTerms.push('perencanaan pembangunan', 'bappeda');
-    if (uLower === 'bkad') searchTerms.push('keuangan dan aset', 'bkad');
-    if (uLower === 'bapenda') searchTerms.push('pendapatan daerah', 'bapenda');
-    if (uLower === 'bkpsdm') searchTerms.push('kepegawaian', 'bkpsdm');
-    if (uLower === 'inspektorat') searchTerms.push('inspektorat');
-    if (uLower === 'bakesbangpol') searchTerms.push('kesatuan bangsa', 'politik', 'bakesbangpol');
-    
-    // PKM mapping
-    if (uLower.startsWith('pkm ')) {
-      const pkmName = uLower.replace('pkm ', '').trim();
-      searchTerms.push(`puskesmas ${pkmName}`);
-    } else if (uLower.startsWith('pkm_')) {
-      const pkmName = uLower.replace('pkm_', '').trim();
-      searchTerms.push(`puskesmas ${pkmName}`);
-    }
-
-    // 3. Search substring
-    for (const term of searchTerms) {
-      match = skpds.find(s => {
-        const sLower = s.uraian.toLowerCase();
-        return sLower.includes(term) || term.includes(sLower);
-      });
-      if (match) return { kode: match.kode, uraian: match.uraian };
-    }
-
-    // 4. Fallback search on individual words
-    const words = uLower.split(' ').filter(w => w.length > 2);
-    if (words.length > 0) {
-      for (const word of words) {
-        match = skpds.find(s => s.uraian.toLowerCase().includes(word));
-        if (match) return { kode: match.kode, uraian: match.uraian };
-      }
-    }
-
-    return null;
-  }
 
   /**
    * POST /api/login
@@ -563,21 +636,26 @@ export function createApiRouter(): Router {
         return;
       }
 
-      // Special check: Only the user's email can login as Admin/Pemda
       const user = await db('users').where({ username }).first();
       if (!user) {
         res.status(401).json({ success: false, error: 'Username tidak terdaftar' });
         return;
       }
 
-      if (user.password !== password) {
+      // Compare using bcrypt
+      let passwordMatch = false;
+      try {
+        passwordMatch = bcrypt.compareSync(password, user.password);
+      } catch (e) {
+        passwordMatch = (user.password === password);
+      }
+
+      if (!passwordMatch) {
         res.status(401).json({ success: false, error: 'Password salah' });
         return;
       }
 
       // Check admin rule constraint: "untuk admin cuma bisa login dari email saya"
-      // User's email: akuntansi.bpkadkdr@gmail.com
-      // If someone else somehow is role 'pemda' in users, double verify they are the designated email
       if (user.role === 'pemda' && username !== 'akuntansi.bpkadkdr@gmail.com') {
         res.status(403).json({ success: false, error: 'Akses Pemda ditolak. Hanya email pengembang/admin yang diizinkan.' });
         return;
@@ -622,8 +700,28 @@ export function createApiRouter(): Router {
         }
       }
 
+      // Generate JWT
+      const tokenPayload = {
+        username: user.username,
+        role: user.role,
+        kode_skpd: matchedKode,
+        nama_skpd: matchedNama,
+        allowed_skpds: allowedSkpds
+      };
+
+      const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+
+      // Set cookie
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000 // 1 day
+      });
+
       res.json({
         success: true,
+        token,
         user: {
           username: user.username,
           role: user.role,
@@ -637,5 +735,79 @@ export function createApiRouter(): Router {
     }
   });
 
+  /**
+   * POST /api/logout
+   */
+  router.post('/logout', (req: Request, res: Response): void => {
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax'
+    });
+    res.json({ success: true, message: 'Logout berhasil' });
+  });
+
   return router;
+}
+
+/**
+ * Helper function to match a username to an SKPD from master reference data
+ */
+function findMatchingSkpd(username: string, skpds: any[]): { kode: string; uraian: string } | null {
+  const uLower = username.toLowerCase().replace(/_/g, ' ').trim();
+  
+  // 1. Exact match
+  let match = skpds.find(s => s.uraian.toLowerCase() === uLower);
+  if (match) return { kode: match.kode, uraian: match.uraian };
+
+  // 2. Map abbreviations to standard words for fuzzy matching
+  const searchTerms: string[] = [uLower];
+  if (uLower === 'pendidikan') searchTerms.push('dinas pendidikan');
+  if (uLower === 'kesehatan') searchTerms.push('dinas kesehatan');
+  if (uLower === 'dpupr') searchTerms.push('pekerjaan umum', 'pupr');
+  if (uLower === 'dperkim') searchTerms.push('perumahan rakyat', 'kawasan permukiman', 'perkim');
+  if (uLower === 'satpolpp') searchTerms.push('satuan polisi pamong praja', 'satpol', 'pp');
+  if (uLower === 'bpbd') searchTerms.push('penanggulangan bencana', 'bpbd');
+  if (uLower === 'dinsos') searchTerms.push('sosial', 'dinsos');
+  if (uLower === 'disnaker') searchTerms.push('tenaga kerja', 'disnaker');
+  if (uLower === 'dlh') searchTerms.push('lingkungan hidup', 'dlh');
+  if (uLower === 'dispendukcapil') searchTerms.push('kependudukan', 'catatan sipil', 'dispenduk');
+  if (uLower === 'dishub') searchTerms.push('perhubungan', 'dishub');
+  if (uLower === 'kominfo') searchTerms.push('komunikasi', 'informatika', 'kominfo');
+  if (uLower === 'dpmptsp') searchTerms.push('penanaman modal', 'dpmptsp');
+  if (uLower === 'bappeda') searchTerms.push('perencanaan pembangunan', 'bappeda');
+  if (uLower === 'bkad') searchTerms.push('keuangan dan aset', 'bkad');
+  if (uLower === 'bapenda') searchTerms.push('pendapatan daerah', 'bapenda');
+  if (uLower === 'bkpsdm') searchTerms.push('kepegawaian', 'bkpsdm');
+  if (uLower === 'inspektorat') searchTerms.push('inspektorat');
+  if (uLower === 'bakesbangpol') searchTerms.push('kesatuan bangsa', 'politik', 'bakesbangpol');
+  
+  // PKM mapping
+  if (uLower.startsWith('pkm ')) {
+    const pkmName = uLower.replace('pkm ', '').trim();
+    searchTerms.push(`puskesmas ${pkmName}`);
+  } else if (uLower.startsWith('pkm_')) {
+    const pkmName = uLower.replace('pkm_', '').trim();
+    searchTerms.push(`puskesmas ${pkmName}`);
+  }
+
+  // 3. Search substring
+  for (const term of searchTerms) {
+    match = skpds.find(s => {
+      const sLower = s.uraian.toLowerCase();
+      return sLower.includes(term) || term.includes(sLower);
+    });
+    if (match) return { kode: match.kode, uraian: match.uraian };
+  }
+
+  // 4. Fallback search on individual words
+  const words = uLower.split(' ').filter(w => w.length > 2);
+  if (words.length > 0) {
+    for (const word of words) {
+      match = skpds.find(s => s.uraian.toLowerCase().includes(word));
+      if (match) return { kode: match.kode, uraian: match.uraian };
+    }
+  }
+
+  return null;
 }

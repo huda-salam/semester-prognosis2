@@ -55,7 +55,11 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
         url = `/api/report/pemda?tahun=${tahun}&bulan=${bulan}`;
       }
 
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
       const result = await res.json();
       if (res.ok && result.success) {
         setReportData(result.data);

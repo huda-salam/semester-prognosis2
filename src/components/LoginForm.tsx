@@ -41,6 +41,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
       const result = await response.json();
 
       if (response.ok && result.success) {
+        if (result.token) {
+          localStorage.setItem('token', result.token);
+        }
         onLoginSuccess(result.user);
       } else {
         setError(result.error || 'Username atau password salah.');

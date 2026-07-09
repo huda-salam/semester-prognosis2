@@ -119,7 +119,10 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
           const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+            },
             body: JSON.stringify(payload)
           });
 

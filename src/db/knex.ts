@@ -1,9 +1,26 @@
 import knex from 'knex';
 import path from 'path';
 import * as XLSX from 'xlsx';
+import bcrypt from 'bcryptjs';
 
 // Local SQLite database file location
 const dbPath = path.resolve(process.cwd(), 'data.db');
+
+function isBcryptHash(value: string): boolean {
+  return /^\$2[aby]\$\d{2}\$/i.test(value);
+}
+
+async function migrateUserPasswordsToHash() {
+  const users = await db('users').select('username', 'password');
+
+  for (const user of users) {
+    const storedPassword = String(user.password ?? '');
+    if (!storedPassword || isBcryptHash(storedPassword)) continue;
+
+    const hashedPassword = bcrypt.hashSync(storedPassword, 12);
+    await db('users').where({ username: user.username }).update({ password: hashedPassword });
+  }
+}
 
 export const db = knex({
   client: 'sqlite3',
@@ -140,6 +157,9 @@ export async function initializeDatabase() {
     console.log('Created table user_skpd');
   }
 
+  // Migrate legacy/plaintext user passwords to bcrypt hashes
+  await migrateUserPasswordsToHash();
+
   // Seed default master data if empty, so user doesn't face an empty system
   await seedDefaultMasterData();
   // Seed users if empty
@@ -175,10 +195,12 @@ async function seedUsers() {
       await db('user_skpd').del();
       await db('users').del();
       
+      const defaultSaltRounds = 10;
+      
       // Insert Admin user
       await db('users').insert({
         username: 'akuntansi.bpkadkdr@gmail.com',
-        password: '123456',
+        password: bcrypt.hashSync('123456', defaultSaltRounds),
         role: 'pemda',
         kode_skpd: null,
         nama_skpd: null
@@ -195,7 +217,7 @@ async function seedUsers() {
           userSet.add(username);
           usersToInsert.push({
             username,
-            password,
+            password: bcrypt.hashSync(password, defaultSaltRounds),
             role: 'skpd',
             kode_skpd: null,
             nama_skpd: null
@@ -220,7 +242,7 @@ async function seedUsers() {
             userSet.add(u);
             usersToInsert.push({
               username: u,
-              password: '123456',
+              password: bcrypt.hashSync('123456', defaultSaltRounds),
               role: 'skpd',
               kode_skpd: null,
               nama_skpd: null
@@ -259,10 +281,12 @@ async function seedUsersFallback() {
   await db('user_skpd').del();
   await db('users').del();
 
+  const defaultSaltRounds = 10;
+
   // Admin user
   await db('users').insert({
     username: 'akuntansi.bpkadkdr@gmail.com',
-    password: '123456',
+    password: bcrypt.hashSync('123456', defaultSaltRounds),
     role: 'pemda',
     kode_skpd: null,
     nama_skpd: null
@@ -271,7 +295,7 @@ async function seedUsersFallback() {
   // Pendidikan
   await db('users').insert({
     username: 'pendidikan',
-    password: '123456',
+    password: bcrypt.hashSync('123456', defaultSaltRounds),
     role: 'skpd',
     kode_skpd: null,
     nama_skpd: null
@@ -284,7 +308,7 @@ async function seedUsersFallback() {
   // Kesehatan
   await db('users').insert({
     username: 'kesehatan',
-    password: '123456',
+    password: bcrypt.hashSync('123456', defaultSaltRounds),
     role: 'skpd',
     kode_skpd: null,
     nama_skpd: null
