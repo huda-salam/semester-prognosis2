@@ -11,8 +11,7 @@ interface PrognosisTabProps {
 
 const formatRupiah = (num: number): string => {
   return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
+    minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(num);
 };
@@ -330,7 +329,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
         
         <div>
           <h3 className="text-sm font-bold text-gray-950 uppercase tracking-wide flex items-center space-x-2">
-            <span>Workspace Prognosis Semester II</span>
+            <span>Pengisian Prognosis Semester II</span>
             <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase border ${
               isLocked 
                 ? 'bg-rose-50 text-rose-700 border-rose-100' 

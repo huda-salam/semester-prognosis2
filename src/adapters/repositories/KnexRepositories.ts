@@ -155,6 +155,14 @@ export class KnexPrognosisRepository implements IPrognosisRepository {
       .select('*');
   }
 
+  async getAllBelanja(): Promise<DataPrognosisBelanja[]> {
+    return await db<DataPrognosisBelanja>('data_prognosis_belanja').select('*');
+  }
+
+  async getAllPendapatanPembiayaan(): Promise<DataPrognosisPendapatanPembiayaan[]> {
+    return await db<DataPrognosisPendapatanPembiayaan>('data_prognosis_pendapatan_pembiayaan').select('*');
+  }
+
   async saveBelanjaMany(records: DataPrognosisBelanja[]): Promise<void> {
     await db.transaction(async (trx) => {
       const chunkSize = 100;

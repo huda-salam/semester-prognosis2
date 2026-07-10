@@ -619,9 +619,11 @@ export class LraUseCase {
   async getReportPerSkpd(tahun: number, bulan: number, kodeSkpd: string): Promise<LraReportItem[]> {
     const rawData = await this.lraRepo.getByPeriodAndSkpd(tahun, bulan, kodeSkpd);
     const masterRef = await this.masterRepo.getAll();
+    const savedBelanja = await this.prognosisRepo.getBelanjaBySkpd(kodeSkpd);
+    const savedPendPemb = await this.prognosisRepo.getPendapatanPembiayaanBySkpd(kodeSkpd);
     
     // Aggregate leaf data into a dynamic hierarchy
-    return this.buildHierarchicalReport(rawData, masterRef);
+    return this.buildHierarchicalReport(rawData, masterRef, savedBelanja, savedPendPemb);
   }
 
   /**
@@ -630,9 +632,20 @@ export class LraUseCase {
   async getRekapPemda(tahun: number, bulan: number): Promise<LraReportItem[]> {
     const rawData = await this.lraRepo.getByPeriodAndSkpd(tahun, bulan);
     const masterRef = await this.masterRepo.getAll();
+    const savedBelanja = await this.prognosisRepo.getAllBelanja();
+    const savedPendPemb = await this.prognosisRepo.getAllPendapatanPembiayaan();
+
+    const mapBelanjaPrognosis = new Map<string, number>();
+    for (const b of savedBelanja) {
+      mapBelanjaPrognosis.set(`${b.kode_skpd}-${b.kode_sub_kegiatan}-${b.kode_rekening}`, b.nilai_prognosis);
+    }
+    const mapPendPembPrognosis = new Map<string, number>();
+    for (const p of savedPendPemb) {
+      mapPendPembPrognosis.set(`${p.kode_skpd}-${p.kode_rekening}`, p.nilai_prognosis);
+    }
 
     // Group only by level 3 accounts
-    const mapLevel3: { [kode: string]: { uraian: string; anggaran: number; realisasi: number } } = {};
+    const mapLevel3: { [kode: string]: { uraian: string; anggaran: number; realisasi: number; prognosis: number } } = {};
 
     // Map each leaf account to its level 3 parent
     const getLevel3Parent = (kode: string): { kode: string; uraian: string } | null => {
@@ -662,11 +675,27 @@ export class LraUseCase {
         mapLevel3[parent3.kode] = {
           uraian: parent3.uraian,
           anggaran: 0,
-          realisasi: 0
+          realisasi: 0,
+          prognosis: 0
         };
       }
       mapLevel3[parent3.kode].anggaran += d.anggaran;
       mapLevel3[parent3.kode].realisasi += d.realisasi;
+
+      // Find prognosis for this leaf record
+      let recordPrognosis = d.anggaran - d.realisasi; // default to sisa
+      if (d.kode_rekening.startsWith('5')) {
+        const key = `${d.kode_skpd}-${d.kode_sub_kegiatan || 'UNKNOWN'}-${d.kode_rekening}`;
+        if (mapBelanjaPrognosis.has(key)) {
+          recordPrognosis = mapBelanjaPrognosis.get(key)!;
+        }
+      } else {
+        const key = `${d.kode_skpd}-${d.kode_rekening}`;
+        if (mapPendPembPrognosis.has(key)) {
+          recordPrognosis = mapPendPembPrognosis.get(key)!;
+        }
+      }
+      mapLevel3[parent3.kode].prognosis += recordPrognosis;
     }
 
     const list: LraReportItem[] = Object.keys(mapLevel3).map(kode => {
@@ -680,7 +709,8 @@ export class LraUseCase {
         anggaran: item.anggaran,
         realisasi: item.realisasi,
         sisa_anggaran: sisa,
-        persentase
+        persentase,
+        prognosis: item.prognosis
       };
     });
 
@@ -699,6 +729,7 @@ export class LraUseCase {
           realisasi: 0,
           sisa_anggaran: 0,
           persentase: 0,
+          prognosis: 0,
           children: []
         };
       }
@@ -706,6 +737,7 @@ export class LraUseCase {
       group.anggaran += item.anggaran;
       group.realisasi += item.realisasi;
       group.sisa_anggaran += item.sisa_anggaran;
+      group.prognosis = (group.prognosis || 0) + (item.prognosis || 0);
       group.children!.push(item);
     }
 
@@ -717,8 +749,22 @@ export class LraUseCase {
     });
   }
 
-  private buildHierarchicalReport(rawData: DataLra[], masterRef: MasterReference[]): LraReportItem[] {
+  private buildHierarchicalReport(
+    rawData: DataLra[], 
+    masterRef: MasterReference[],
+    savedBelanja: DataPrognosisBelanja[] = [],
+    savedPendPemb: DataPrognosisPendapatanPembiayaan[] = []
+  ): LraReportItem[] {
     const rootItems: LraReportItem[] = [];
+
+    const mapBelanjaPrognosis = new Map<string, number>();
+    for (const b of savedBelanja) {
+      mapBelanjaPrognosis.set(`${b.kode_sub_kegiatan}-${b.kode_rekening}`, b.nilai_prognosis);
+    }
+    const mapPendPembPrognosis = new Map<string, number>();
+    for (const p of savedPendPemb) {
+      mapPendPembPrognosis.set(p.kode_rekening, p.nilai_prognosis);
+    }
 
     // Separate Belanja (rekening 5) vs Pendapatan/Pembiayaan (4, 6)
     const belanjaData = rawData.filter(r => r.kode_rekening.startsWith('5'));
@@ -734,6 +780,7 @@ export class LraUseCase {
         realisasi: 0,
         sisa_anggaran: 0,
         persentase: 0,
+        prognosis: 0,
         children: []
       };
 
@@ -753,39 +800,42 @@ export class LraUseCase {
 
         // 1. Urusan
         if (!mapUrusan[kdUr]) {
-          mapUrusan[kdUr] = { kode: kdUr, uraian: nmUr, jenis: 'urusan', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, children: [] };
+          mapUrusan[kdUr] = { kode: kdUr, uraian: nmUr, jenis: 'urusan', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, prognosis: 0, children: [] };
         }
         const urItem = mapUrusan[kdUr];
 
         // 2. Bidang
         let bidItem = urItem.children!.find(x => x.kode === kdBid);
         if (!bidItem) {
-          bidItem = { kode: kdBid, uraian: nmBid, jenis: 'bidang', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, children: [] };
+          bidItem = { kode: kdBid, uraian: nmBid, jenis: 'bidang', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, prognosis: 0, children: [] };
           urItem.children!.push(bidItem);
         }
 
         // 3. Program
         let prgItem = bidItem.children!.find(x => x.kode === kdPrg);
         if (!prgItem) {
-          prgItem = { kode: kdPrg, uraian: nmPrg, jenis: 'program', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, children: [] };
+          prgItem = { kode: kdPrg, uraian: nmPrg, jenis: 'program', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, prognosis: 0, children: [] };
           bidItem.children!.push(prgItem);
         }
 
         // 4. Kegiatan
         let kegItem = prgItem.children!.find(x => x.kode === kdKeg);
         if (!kegItem) {
-          kegItem = { kode: kdKeg, uraian: nmKeg, jenis: 'kegiatan', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, children: [] };
+          kegItem = { kode: kdKeg, uraian: nmKeg, jenis: 'kegiatan', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, prognosis: 0, children: [] };
           prgItem.children!.push(kegItem);
         }
 
         // 5. Sub Kegiatan
         let subItem = kegItem.children!.find(x => x.kode === kdSub);
         if (!subItem) {
-          subItem = { kode: kdSub, uraian: nmSub, jenis: 'sub_kegiatan', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, children: [] };
+          subItem = { kode: kdSub, uraian: nmSub, jenis: 'sub_kegiatan', anggaran: 0, realisasi: 0, sisa_anggaran: 0, persentase: 0, prognosis: 0, children: [] };
           kegItem.children!.push(subItem);
         }
 
         // 6. Rekening Leaf
+        const key = `${kdSub}-${d.kode_rekening}`;
+        const progVal = mapBelanjaPrognosis.has(key) ? mapBelanjaPrognosis.get(key)! : d.anggaran - d.realisasi;
+
         subItem.children!.push({
           kode: d.kode_rekening,
           uraian: d.nama_rekening,
@@ -793,7 +843,8 @@ export class LraUseCase {
           anggaran: d.anggaran,
           realisasi: d.realisasi,
           sisa_anggaran: d.anggaran - d.realisasi,
-          persentase: d.anggaran > 0 ? (d.realisasi / d.anggaran) * 100 : 0
+          persentase: d.anggaran > 0 ? (d.realisasi / d.anggaran) * 100 : 0,
+          prognosis: progVal
         });
       }
 
@@ -804,12 +855,14 @@ export class LraUseCase {
         item.anggaran = 0;
         item.realisasi = 0;
         item.sisa_anggaran = 0;
+        item.prognosis = 0;
 
         for (const child of item.children) {
           rollup(child);
           item.anggaran += child.anggaran;
           item.realisasi += child.realisasi;
           item.sisa_anggaran += child.sisa_anggaran;
+          item.prognosis += (child.prognosis || 0);
         }
         item.persentase = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
       };
@@ -842,6 +895,7 @@ export class LraUseCase {
             realisasi: 0,
             sisa_anggaran: 0,
             persentase: 0,
+            prognosis: 0,
             children: []
           };
         }
@@ -859,6 +913,7 @@ export class LraUseCase {
             realisasi: 0,
             sisa_anggaran: 0,
             persentase: 0,
+            prognosis: 0,
             children: []
           };
           groupRoot.children!.push(lvl2Item);
@@ -876,12 +931,16 @@ export class LraUseCase {
             realisasi: 0,
             sisa_anggaran: 0,
             persentase: 0,
+            prognosis: 0,
             children: []
           };
           lvl2Item.children!.push(lvl3Item);
         }
 
         // Level 4 (Sub Kelompok/Leaf)
+        const key = d.kode_rekening;
+        const progVal = mapPendPembPrognosis.has(key) ? mapPendPembPrognosis.get(key)! : d.anggaran - d.realisasi;
+
         lvl3Item.children!.push({
           kode: d.kode_rekening,
           uraian: d.nama_rekening,
@@ -889,7 +948,8 @@ export class LraUseCase {
           anggaran: d.anggaran,
           realisasi: d.realisasi,
           sisa_anggaran: d.anggaran - d.realisasi,
-          persentase: d.anggaran > 0 ? (d.realisasi / d.anggaran) * 100 : 0
+          persentase: d.anggaran > 0 ? (d.realisasi / d.anggaran) * 100 : 0,
+          prognosis: progVal
         });
       }
 
@@ -900,12 +960,14 @@ export class LraUseCase {
         item.anggaran = 0;
         item.realisasi = 0;
         item.sisa_anggaran = 0;
+        item.prognosis = 0;
 
         for (const child of item.children) {
           rollup(child);
           item.anggaran += child.anggaran;
           item.realisasi += child.realisasi;
           item.sisa_anggaran += child.sisa_anggaran;
+          item.prognosis += (child.prognosis || 0);
         }
         item.persentase = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
       };

@@ -71,5 +71,6 @@ export interface LraReportItem {
   realisasi: number;
   sisa_anggaran: number;
   persentase: number;
+  prognosis?: number;
   children?: LraReportItem[];
 }

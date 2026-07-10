@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Folder, ChevronRight, ChevronDown, Table, FileText, Download, ListFilter, AlertCircle } from 'lucide-react';
+import { Search, Folder, ChevronRight, ChevronDown, Table, FileText, Download, ListFilter, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { LraReportItem } from '../types';
 import { getApiUrl } from '../utils/api';
 
@@ -9,11 +10,10 @@ interface ReportTabProps {
   skpdList: { kode: string; uraian: string }[];
 }
 
-// Custom format function for Indonesian Rupiah
+// Custom format function for Indonesian Rupiah (without Rp prefix)
 const formatRupiah = (num: number): string => {
   return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
+    minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(num);
 };
@@ -129,6 +129,108 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
 
   const activeSkpdName = skpdList.find(s => s.kode === activeSkpd)?.uraian || 'SKPD';
 
+  const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const headers = [
+      'Kode Rekening',
+      'Uraian Nama Rekening / Program',
+      'Anggaran',
+      'Realisasi',
+      'Sisa Anggaran',
+      'Persentase (%)',
+      'Prognosis 6 (Enam) Bulan Berikutnya'
+    ];
+    
+    const data: any[][] = [
+      ['PEMERINTAH KABUPATEN KEDIRI'],
+      [reportType === 'skpd' ? 'LAPORAN REALISASI ANGGARAN (LRA) SKPD' : 'LAPORAN REALISASI KONSOLIDASI APBD'],
+      [`Tahun Anggaran: ${tahun}`],
+      [`SKPD: ${reportType === 'skpd' ? activeSkpdName : 'KABUPATEN KEDIRI (KONSOLIDASI)'}`],
+      [`Periode: s.d. ${months.find(m => m.value === bulan)?.label.replace(' (Semester I)', '').replace(' (Semester II)', '')} ${tahun}`],
+      [], // Empty row
+      headers
+    ];
+
+    const targetList = filterTree(reportData, searchQuery);
+
+    if (reportType === 'skpd') {
+      const flattenItem = (item: LraReportItem, depth: number) => {
+        const indentation = '  '.repeat(depth);
+        const sisa = item.sisa_anggaran;
+        const pct = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
+        const prog = item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi);
+
+        data.push([
+          item.kode,
+          indentation + item.uraian,
+          item.anggaran,
+          item.realisasi,
+          sisa,
+          Number(pct.toFixed(1)),
+          prog
+        ]);
+
+        if (item.children) {
+          item.children.forEach(child => flattenItem(child, depth + 1));
+        }
+      };
+      targetList.forEach(item => flattenItem(item, 0));
+    } else {
+      // pemda
+      targetList.forEach(group => {
+        const groupPct = group.anggaran > 0 ? (group.realisasi / group.anggaran) * 100 : 0;
+        const groupProg = group.prognosis !== undefined ? group.prognosis : (group.anggaran - group.realisasi);
+        data.push([
+          group.kode,
+          group.uraian.toUpperCase(),
+          group.anggaran,
+          group.realisasi,
+          group.sisa_anggaran,
+          Number(groupPct.toFixed(1)),
+          groupProg
+        ]);
+
+        group.children?.forEach(item => {
+          const itemPct = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
+          const itemProg = item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi);
+          data.push([
+            item.kode,
+            '  ' + item.uraian,
+            item.anggaran,
+            item.realisasi,
+            item.sisa_anggaran,
+            Number(itemPct.toFixed(1)),
+            itemProg
+          ]);
+        });
+      });
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // Set column widths
+    const wscols = [
+      { wch: 18 }, // Kode
+      { wch: 45 }, // Uraian
+      { wch: 16 }, // Anggaran
+      { wch: 16 }, // Realisasi
+      { wch: 16 }, // Sisa Anggaran
+      { wch: 12 }, // Persentase
+      { wch: 25 }, // Prognosis
+    ];
+    ws['!cols'] = wscols;
+
+    XLSX.utils.book_append_sheet(wb, ws, 'LRA Report');
+    
+    const labelBulan = months.find(m => m.value === bulan)?.label
+      .replace(' (Semester I)', '')
+      .replace(' (Semester II)', '')
+      .replace(/[^a-zA-Z0-9]/g, '_') || '';
+    
+    const filename = `LRA_${reportType === 'skpd' ? activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_') : 'KONSOLIDASI'}_${labelBulan}_${tahun}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  };
+
   // Renders a single row of the tree table
   const renderTreeRow = (item: LraReportItem, depth: number = 0) => {
     const isExpanded = !!expandedKeys[item.kode];
@@ -154,7 +256,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
               {hasChildren ? (
                 <button
                   onClick={() => toggleExpand(item.kode)}
-                  className="mr-1.5 p-1 rounded hover:bg-gray-250 cursor-pointer text-gray-500"
+                  className="mr-1.5 p-1 rounded hover:bg-gray-250 cursor-pointer text-gray-500 print:hidden"
                 >
                   {isExpanded ? (
                     <ChevronDown className="w-3.5 h-3.5" />
@@ -163,12 +265,12 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
                   )}
                 </button>
               ) : (
-                <span className="w-5" />
+                <span className="w-5 print:hidden" />
               )}
               <span className={depth === 0 ? 'text-gray-950 uppercase text-[11px] tracking-wide' : 'text-gray-800'}>
                 {item.uraian}
               </span>
-              <span className="ml-2 text-[9px] font-semibold text-gray-400 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded uppercase">
+              <span className="ml-2 text-[9px] font-semibold text-gray-400 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded uppercase print:hidden">
                 {item.jenis === 'kelompok_besar' ? 'ROOT' : item.jenis}
               </span>
             </div>
@@ -185,7 +287,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
           <td className="py-2.5 px-4 text-right">
             <div className="flex items-center justify-end space-x-2">
               {/* Micro-progress indicator */}
-              <div className="w-12 bg-gray-100 rounded-full h-1.5 hidden sm:block overflow-hidden border border-gray-200/50">
+              <div className="w-12 bg-gray-100 rounded-full h-1.5 hidden sm:block overflow-hidden border border-gray-200/50 print:hidden">
                 <div
                   className={`h-full rounded-full ${sisaRatio > 100 ? 'bg-rose-500' : 'bg-gray-900'}`}
                   style={{ width: `${Math.min(100, sisaRatio)}%` }}
@@ -195,6 +297,9 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
                 {sisaRatio.toFixed(1)}%
               </span>
             </div>
+          </td>
+          <td className="py-2.5 px-4 text-right font-mono font-medium text-gray-900">
+            {formatRupiah(item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi))}
           </td>
         </tr>
         
@@ -210,7 +315,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
     <div className="space-y-6">
       
       {/* Top Filter and Report Scope Toggles */}
-      <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         
         <div className="flex items-center space-x-3">
           <button
@@ -260,10 +365,29 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
       </div>
 
       {/* Main Report Window */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden print:border-none print:shadow-none print:overflow-visible">
         
+        {/* Formal Government Print Header */}
+        <div className="hidden print:block text-center border-b-2 border-double border-gray-900 pb-4 mb-6">
+          <h1 className="text-sm font-bold tracking-wide uppercase text-gray-900">Pemerintah Kabupaten Kediri</h1>
+          <h2 className="text-base font-extrabold tracking-wider uppercase text-gray-900 mt-1">
+            {reportType === 'skpd' ? 'Laporan Realisasi Anggaran (LRA) SKPD' : 'Laporan Realisasi Anggaran (LRA) Kabupaten Kediri (Konsolidasi)'}
+          </h2>
+          <p className="text-xs text-gray-700 font-semibold mt-1">
+            Tahun Anggaran {tahun}
+          </p>
+          <div className="mt-4 text-left grid grid-cols-2 text-xs text-gray-800 font-medium leading-relaxed">
+            <div>
+              <span className="inline-block w-20">SKPD</span>: {reportType === 'skpd' ? activeSkpdName : 'KABUPATEN KEDIRI (KONSOLIDASI)'}
+            </div>
+            <div className="text-right">
+              <span className="inline-block w-20">Periode</span>: s.d. {months.find(m => m.value === bulan)?.label.replace(' (Semester I)', '').replace(' (Semester II)', '')} {tahun}
+            </div>
+          </div>
+        </div>
+
         {/* Table Toolbar controls */}
-        <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50/50">
+        <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50/50 print:hidden">
           
           <div className="flex items-center space-x-2 max-w-sm flex-1">
             <div className="relative w-full">
@@ -295,6 +419,13 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
                 </button>
               </>
             )}
+            <button
+              onClick={exportToExcel}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1 border border-emerald-600"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Ekspor Excel</span>
+            </button>
             <button
               onClick={() => window.print()}
               className="bg-white border border-gray-200 hover:border-gray-300 text-gray-800 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1"
@@ -330,10 +461,11 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
                 <tr className="bg-gray-100 text-gray-400 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
                   <th className="py-3 px-4 font-semibold w-32">Kode Rekening</th>
                   <th className="py-3 px-4 font-semibold">Uraian Nama Rekening / Program</th>
-                  <th className="py-3 px-4 font-semibold text-right w-44">Anggaran (Rp)</th>
-                  <th className="py-3 px-4 font-semibold text-right w-44">Realisasi (Rp)</th>
-                  <th className="py-3 px-4 font-semibold text-right w-44">Sisa Anggaran (Rp)</th>
+                  <th className="py-3 px-4 font-semibold text-right w-44">Anggaran</th>
+                  <th className="py-3 px-4 font-semibold text-right w-44">Realisasi</th>
+                  <th className="py-3 px-4 font-semibold text-right w-44">Sisa Anggaran</th>
                   <th className="py-3 px-4 font-semibold text-right w-36">Persentase</th>
+                  <th className="py-3 px-4 font-semibold text-right w-44">Prognosis 6 (Enam) Bulan Berikutnya</th>
                 </tr>
               </thead>
               <tbody>
@@ -351,6 +483,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
                           <td className="py-2.5 px-4 text-right text-gray-950 font-mono font-bold">
                             {group.persentase.toFixed(1)}%
                           </td>
+                          <td className="py-2.5 px-4 text-right text-gray-950">{formatRupiah(group.prognosis !== undefined ? group.prognosis : (group.anggaran - group.realisasi))}</td>
                         </tr>
                         
                         {/* Children Rows (Level 3) */}
@@ -368,6 +501,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
                                   {sisaRatio.toFixed(1)}%
                                 </span>
                               </td>
+                              <td className="py-2 px-4 text-right font-mono text-gray-700">{formatRupiah(item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi))}</td>
                             </tr>
                           );
                         })}

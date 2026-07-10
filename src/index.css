@@ -25,3 +25,61 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@media print {
+  @page {
+    size: auto;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+  
+  body, html {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 10pt !important;
+  }
+
+  header,
+  footer,
+  nav,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Force table headers and rows to show clearly without custom colored backgrounds */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    color: #000000 !important;
+  }
+
+  th, td {
+    border: 1px solid #9ca3af !important; /* formal borders for printing */
+    padding: 6px 10px !important;
+    background-color: transparent !important;
+    color: #000000 !important;
+  }
+
+  th {
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    font-size: 8pt !important;
+    background-color: #f3f4f6 !important; /* light gray for headers if supported */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Keep table rows on the same page where possible */
+  tr {
+    page-break-inside: avoid !important;
+  }
+  
+  /* Reset shadows and paddings for outer layouts */
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+}
+

@@ -148,7 +148,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {/* Dynamic Context Breadcrumbs / Greeting */}
-        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200/50 pb-5 gap-3">
+        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200/50 pb-5 gap-3 print:hidden">
           <div>
             <h2 className="text-xl font-bold text-gray-950 tracking-tight">
               {activeTab === 'upload' && 'Pusat Integrasi Data LRA'}
@@ -171,7 +171,7 @@ export default function App() {
         </div>
 
         {/* Minimalist Tab Navigation bar */}
-        <div className="border-b border-gray-200 mb-8 flex justify-between items-center bg-white p-2 rounded-xl border border-gray-100 shadow-sm">
+        <div className="border-b border-gray-200 mb-8 flex justify-between items-center bg-white p-2 rounded-xl border border-gray-100 shadow-sm print:hidden">
           <div className="flex space-x-2">
             {tabs.map((tab) => {
               const Icon = tab.icon;

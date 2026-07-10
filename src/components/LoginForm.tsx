@@ -65,13 +65,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           <div className="bg-gray-900 text-white p-3 rounded-2xl shadow-md">
             <Building2 className="w-8 h-8" />
           </div>
-          <h2 className="mt-6 text-center text-2xl font-extrabold text-gray-900 tracking-tight uppercase">
-            Uploader & Rekap LRA
+          <h2 className="mt-5 text-center text-base font-extrabold text-gray-900 tracking-tight leading-snug px-4">
+            Aplikasi Laporan Realisasi APBD Semester I<br />dan Prognosis 6 (Enam) Bulan Berikutnya
           </h2>
-          <p className="mt-2 text-center text-xs text-gray-500 font-bold tracking-wider uppercase">
-            PEMDA KABUPATEN KEDIRI
+          <p className="mt-2 text-center text-xs text-gray-600 font-bold tracking-wider uppercase">
+            Pemerintah Daerah Kabupaten Kediri
           </p>
-          <div className="mt-1.5 h-1 w-12 bg-emerald-500 rounded-full" />
+          <p className="mt-1 text-center text-[11px] text-gray-500 font-bold uppercase tracking-widest">
+            Tahun Anggaran 2026
+          </p>
+          <div className="mt-3 h-1 w-12 bg-emerald-500 rounded-full" />
         </div>
       </div>
 

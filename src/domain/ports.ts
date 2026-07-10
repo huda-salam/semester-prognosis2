@@ -21,6 +21,8 @@ export interface ILraRepository {
 export interface IPrognosisRepository {
   getBelanjaBySkpd(kodeSkpd: string): Promise<DataPrognosisBelanja[]>;
   getPendapatanPembiayaanBySkpd(kodeSkpd: string): Promise<DataPrognosisPendapatanPembiayaan[]>;
+  getAllBelanja(): Promise<DataPrognosisBelanja[]>;
+  getAllPendapatanPembiayaan(): Promise<DataPrognosisPendapatanPembiayaan[]>;
   saveBelanjaMany(records: DataPrognosisBelanja[]): Promise<void>;
   savePendapatanPembiayaanMany(records: DataPrognosisPendapatanPembiayaan[]): Promise<void>;
   updateBelanjaRecord(record: Partial<DataPrognosisBelanja> & { kode_skpd: string, kode_sub_kegiatan: string, kode_rekening: string }): Promise<void>;
