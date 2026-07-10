@@ -90,7 +90,7 @@ export async function initializeDatabase() {
     await db.schema.createTable('master_referensi', (table) => {
       table.string('kode').notNullable();
       table.string('jenis').notNullable(); // urusan, bidang, skpd, program, kegiatan, sub_kegiatan, rekening
-      table.string('uraian').notNullable();
+      table.string('uraian', 1000).notNullable();
       table.integer('level').nullable();
       table.string('parent').nullable();
       table.primary(['kode', 'jenis']);
@@ -106,18 +106,18 @@ export async function initializeDatabase() {
       table.integer('tahun').notNullable();
       table.integer('bulan').notNullable();
       table.string('kode_skpd').notNullable();
-      table.string('nama_skpd').notNullable();
+      table.string('nama_skpd', 1000).notNullable();
       
       table.string('kode_urusan').nullable();
-      table.string('nama_urusan').nullable();
+      table.string('nama_urusan', 1000).nullable();
       table.string('kode_bidang').nullable();
-      table.string('nama_bidang').nullable();
+      table.string('nama_bidang', 1000).nullable();
       table.string('kode_program').nullable();
-      table.string('nama_program').nullable();
+      table.string('nama_program', 1000).nullable();
       table.string('kode_kegiatan').nullable();
-      table.string('nama_kegiatan').nullable();
+      table.string('nama_kegiatan', 1000).nullable();
       table.string('kode_sub_kegiatan').nullable();
-      table.string('nama_sub_kegiatan').nullable();
+      table.string('nama_sub_kegiatan', 1000).nullable();
       
       table.string('kode_rekening').notNullable();
       table.string('nama_rekening').notNullable();
