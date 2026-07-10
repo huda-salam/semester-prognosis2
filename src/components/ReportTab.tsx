@@ -18,6 +18,160 @@ const formatRupiah = (num: number): string => {
   }).format(num);
 };
 
+// Split code helper into 3 columns
+const getSplitCodes = (item: LraReportItem): { col1: string; col2: string; col3: string } => {
+  if (item.jenis === 'urusan' || item.jenis === 'bidang') {
+    return { col1: item.kode, col2: '', col3: '' };
+  }
+  if (item.jenis === 'program' || item.jenis === 'kegiatan' || item.jenis === 'sub_kegiatan') {
+    return { col1: '', col2: item.kode, col3: '' };
+  }
+  return { col1: '', col2: '', col3: item.kode };
+};
+
+// Calculate pembiayaan 6.1 and 6.2 recursively
+const getPembiayaan61And62 = (node: LraReportItem | undefined) => {
+  let ang61 = 0, real61 = 0, sisa61 = 0, prog61 = 0;
+  let ang62 = 0, real62 = 0, sisa62 = 0, prog62 = 0;
+
+  if (node && node.children) {
+    const immediate61 = node.children.find(c => c.kode === '6.1' || c.kode.startsWith('6.1.'));
+    const immediate62 = node.children.find(c => c.kode === '6.2' || c.kode.startsWith('6.2.'));
+
+    if (immediate61 && immediate62) {
+      ang61 = immediate61.anggaran;
+      real61 = immediate61.realisasi;
+      sisa61 = immediate61.sisa_anggaran;
+      prog61 = immediate61.prognosis !== undefined ? immediate61.prognosis : (immediate61.anggaran - immediate61.realisasi);
+
+      ang62 = immediate62.anggaran;
+      real62 = immediate62.realisasi;
+      sisa62 = immediate62.sisa_anggaran;
+      prog62 = immediate62.prognosis !== undefined ? immediate62.prognosis : (immediate62.anggaran - immediate62.realisasi);
+    } else {
+      node.children.forEach(c => {
+        if (c.kode.startsWith('6.1')) {
+          ang61 += c.anggaran;
+          real61 += c.realisasi;
+          sisa61 += c.sisa_anggaran;
+          prog61 += c.prognosis !== undefined ? c.prognosis : (c.anggaran - c.realisasi);
+        } else if (c.kode.startsWith('6.2')) {
+          ang62 += c.anggaran;
+          real62 += c.realisasi;
+          sisa62 += c.sisa_anggaran;
+          prog62 += c.prognosis !== undefined ? c.prognosis : (c.anggaran - c.realisasi);
+        }
+      });
+    }
+  }
+
+  return {
+    ang61, real61, sisa61, prog61,
+    ang62, real62, sisa62, prog62
+  };
+};
+
+// Calculate all needed LRA summary rows
+const getLraCalculations = (data: LraReportItem[]) => {
+  const pNode = data.find(item => item.kode === '4');
+  const bNode = data.find(item => item.kode === '5');
+  const fNode = data.find(item => item.kode === '6');
+
+  const pendapatan = pNode ? { ...pNode } : {
+    kode: '4',
+    uraian: 'PENDAPATAN DAERAH',
+    jenis: 'kelompok_besar',
+    anggaran: 0,
+    realisasi: 0,
+    sisa_anggaran: 0,
+    persentase: 0,
+    prognosis: 0
+  };
+
+  const belanja = bNode ? { ...bNode } : {
+    kode: '5',
+    uraian: 'BELANJA DAERAH',
+    jenis: 'kelompok_besar',
+    anggaran: 0,
+    realisasi: 0,
+    sisa_anggaran: 0,
+    persentase: 0,
+    prognosis: 0
+  };
+
+  const p6162 = getPembiayaan61And62(fNode);
+  const pembiayaanNetto = {
+    kode: '',
+    uraian: 'PEMBIAYAAN NETTO',
+    jenis: 'summary_row',
+    anggaran: p6162.ang61 - p6162.ang62,
+    realisasi: p6162.real61 - p6162.real62,
+    sisa_anggaran: (p6162.ang61 - p6162.ang62) - (p6162.real61 - p6162.real62),
+    persentase: 0,
+    prognosis: p6162.prog61 - p6162.prog62
+  };
+  pembiayaanNetto.persentase = pembiayaanNetto.anggaran !== 0 
+    ? (pembiayaanNetto.realisasi / pembiayaanNetto.anggaran) * 100 
+    : 0;
+
+  const pembiayaan = fNode ? {
+    ...fNode,
+    anggaran: pembiayaanNetto.anggaran,
+    realisasi: pembiayaanNetto.realisasi,
+    sisa_anggaran: pembiayaanNetto.sisa_anggaran,
+    persentase: pembiayaanNetto.persentase,
+    prognosis: pembiayaanNetto.prognosis
+  } : {
+    kode: '6',
+    uraian: 'PEMBIAYAAN DAERAH',
+    jenis: 'kelompok_besar',
+    anggaran: 0,
+    realisasi: 0,
+    sisa_anggaran: 0,
+    persentase: 0,
+    prognosis: 0
+  };
+
+  const surplusDefisit = {
+    kode: '',
+    uraian: 'SURPLUS / DEFISIT LRA',
+    jenis: 'summary_row',
+    anggaran: pendapatan.anggaran - belanja.anggaran,
+    realisasi: pendapatan.realisasi - belanja.realisasi,
+    sisa_anggaran: (pendapatan.anggaran - belanja.anggaran) - (pendapatan.realisasi - belanja.realisasi),
+    persentase: 0,
+    prognosis: (pendapatan.prognosis !== undefined ? pendapatan.prognosis : (pendapatan.anggaran - pendapatan.realisasi)) - 
+               (belanja.prognosis !== undefined ? belanja.prognosis : (belanja.anggaran - belanja.realisasi))
+  };
+  surplusDefisit.persentase = surplusDefisit.anggaran !== 0 
+    ? (surplusDefisit.realisasi / surplusDefisit.anggaran) * 100 
+    : 0;
+
+  const silpa = {
+    kode: '',
+    uraian: 'SISA LEBIH PEMBIAYAAN ANGGARAN TAHUN BERKENAAN (SiLPA)',
+    jenis: 'summary_row',
+    anggaran: surplusDefisit.anggaran + pembiayaanNetto.anggaran,
+    realisasi: surplusDefisit.realisasi + pembiayaanNetto.realisasi,
+    sisa_anggaran: surplusDefisit.sisa_anggaran + pembiayaanNetto.sisa_anggaran,
+    persentase: 0,
+    prognosis: surplusDefisit.prognosis + pembiayaanNetto.prognosis
+  };
+  silpa.persentase = silpa.anggaran !== 0 
+    ? (silpa.realisasi / silpa.anggaran) * 100 
+    : 0;
+
+  return {
+    pendapatan,
+    belanja,
+    surplusDefisit,
+    pembiayaan,
+    pembiayaanNetto,
+    silpa,
+    hasPembiayaan: !!fNode
+  };
+};
+
 export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList }) => {
   const [reportType, setReportType] = useState<'skpd' | 'pemda'>('skpd');
   const [tahun, setTahun] = useState<number>(2026);
@@ -131,7 +285,17 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
 
   const exportToExcel = () => {
     const wb = XLSX.utils.book_new();
-    const headers = [
+    const headers = reportType === 'skpd' ? [
+      'Kode Urusan / Bidang',
+      'Kode Program / Kegiatan / Sub Kegiatan',
+      'Kode Rekening',
+      'Uraian Nama Rekening / Program',
+      'Anggaran',
+      'Realisasi',
+      'Sisa Anggaran',
+      'Persentase (%)',
+      'Prognosis 6 (Enam) Bulan Berikutnya'
+    ] : [
       'Kode Rekening',
       'Uraian Nama Rekening / Program',
       'Anggaran',
@@ -151,66 +315,167 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
       headers
     ];
 
-    const targetList = filterTree(reportData, searchQuery);
+    const calcs = getLraCalculations(reportData);
 
-    if (reportType === 'skpd') {
-      const flattenItem = (item: LraReportItem, depth: number) => {
-        const indentation = '  '.repeat(depth);
-        const sisa = item.sisa_anggaran;
-        const pct = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
-        const prog = item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi);
+    const pushExcelItem = (
+      item: LraReportItem,
+      depth: number,
+      activeUrusanBidang: string = '',
+      activeProgramKegiatanSubkeg: string = ''
+    ) => {
+      const indentation = '  '.repeat(depth);
+      const pct = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
+      const prog = item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi);
 
+      if (reportType === 'skpd') {
+        let col1 = '';
+        let col2 = '';
+        let col3 = '';
+
+        if (item.jenis === 'urusan' || item.jenis === 'bidang') {
+          col1 = item.kode;
+        } else if (item.jenis === 'program' || item.jenis === 'kegiatan' || item.jenis === 'sub_kegiatan') {
+          col1 = activeUrusanBidang;
+          col2 = item.kode;
+        } else {
+          col1 = activeUrusanBidang;
+          col2 = activeProgramKegiatanSubkeg;
+          col3 = item.kode;
+        }
+
+        data.push([
+          col1,
+          col2,
+          col3,
+          indentation + item.uraian,
+          item.anggaran,
+          item.realisasi,
+          item.sisa_anggaran,
+          Number(pct.toFixed(1)),
+          prog
+        ]);
+      } else {
         data.push([
           item.kode,
           indentation + item.uraian,
           item.anggaran,
           item.realisasi,
-          sisa,
+          item.sisa_anggaran,
           Number(pct.toFixed(1)),
           prog
         ]);
+      }
+    };
 
-        if (item.children) {
-          item.children.forEach(child => flattenItem(child, depth + 1));
-        }
-      };
-      targetList.forEach(item => flattenItem(item, 0));
-    } else {
-      // pemda
-      targetList.forEach(group => {
-        const groupPct = group.anggaran > 0 ? (group.realisasi / group.anggaran) * 100 : 0;
-        const groupProg = group.prognosis !== undefined ? group.prognosis : (group.anggaran - group.realisasi);
+    const pushExcelSummary = (item: any) => {
+      if (reportType === 'skpd') {
         data.push([
-          group.kode,
-          group.uraian.toUpperCase(),
-          group.anggaran,
-          group.realisasi,
-          group.sisa_anggaran,
-          Number(groupPct.toFixed(1)),
-          groupProg
+          '',
+          '',
+          '',
+          item.uraian,
+          item.anggaran,
+          item.realisasi,
+          item.sisa_anggaran,
+          Number(item.persentase.toFixed(1)),
+          item.prognosis
         ]);
+      } else {
+        data.push([
+          '',
+          item.uraian,
+          item.anggaran,
+          item.realisasi,
+          item.sisa_anggaran,
+          Number(item.persentase.toFixed(1)),
+          item.prognosis
+        ]);
+      }
+    };
 
-        group.children?.forEach(item => {
-          const itemPct = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
-          const itemProg = item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi);
-          data.push([
-            item.kode,
-            '  ' + item.uraian,
-            item.anggaran,
-            item.realisasi,
-            item.sisa_anggaran,
-            Number(itemPct.toFixed(1)),
-            itemProg
-          ]);
-        });
-      });
+    const pushExcelEmpty = () => {
+      if (reportType === 'skpd') {
+        data.push(['', '', '', '', '', '', '', '', '']);
+      } else {
+        data.push(['', '', '', '', '', '', '']);
+      }
+    };
+
+    const flattenTree = (
+      item: LraReportItem,
+      depth: number,
+      activeUrusanBidang: string = '',
+      activeProgramKegiatanSubkeg: string = ''
+    ) => {
+      let nextUrusanBidang = activeUrusanBidang;
+      let nextProgramKegiatanSubkeg = activeProgramKegiatanSubkeg;
+
+      if (item.jenis === 'urusan' || item.jenis === 'bidang') {
+        nextUrusanBidang = item.kode;
+      } else if (item.jenis === 'program' || item.jenis === 'kegiatan' || item.jenis === 'sub_kegiatan') {
+        nextProgramKegiatanSubkeg = item.kode;
+      }
+
+      pushExcelItem(item, depth, activeUrusanBidang, activeProgramKegiatanSubkeg);
+      item.children?.forEach(c => flattenTree(c, depth + 1, nextUrusanBidang, nextProgramKegiatanSubkeg));
+    };
+
+    // 1. Pendapatan (4)
+    const pNode = reportData.find(item => item.kode === '4');
+    if (pNode) {
+      flattenTree(pNode, 0);
     }
+
+    pushExcelEmpty();
+
+    // 2. Belanja (5)
+    const bNode = reportData.find(item => item.kode === '5');
+    if (bNode) {
+      flattenTree(bNode, 0);
+    }
+
+    pushExcelEmpty();
+
+    // 3. Surplus / Defisit
+    pushExcelSummary(calcs.surplusDefisit);
+
+    pushExcelEmpty();
+
+    // 4. Pembiayaan (6)
+    if (calcs.hasPembiayaan) {
+      const fNode = reportData.find(item => item.kode === '6');
+      if (fNode) {
+        const modifiedRoot = { ...fNode, ...calcs.pembiayaan };
+        pushExcelItem(modifiedRoot, 0);
+        fNode.children?.forEach(c => flattenTree(c, 1));
+      }
+    }
+
+    if (calcs.hasPembiayaan) {
+      pushExcelEmpty();
+      // 5. Pembiayaan Netto
+      pushExcelSummary(calcs.pembiayaanNetto);
+      pushExcelEmpty();
+    }
+
+    // 6. SiLPA
+    pushExcelSummary(calcs.silpa);
 
     const ws = XLSX.utils.aoa_to_sheet(data);
 
     // Set column widths
-    const wscols = [
-      { wch: 18 }, // Kode
+    const wscols = reportType === 'skpd' ? [
+      { wch: 15 }, // Kode Urusan/Bidang
+      { wch: 18 }, // Kode Prog/Keg/Subkeg
+      { wch: 15 }, // Kode Rekening
+      { wch: 45 }, // Uraian
+      { wch: 16 }, // Anggaran
+      { wch: 16 }, // Realisasi
+      { wch: 16 }, // Sisa Anggaran
+      { wch: 12 }, // Persentase
+      { wch: 25 }, // Prognosis
+    ] : [
+      { wch: 18 }, // Kode Rekening
       { wch: 45 }, // Uraian
       { wch: 16 }, // Anggaran
       { wch: 16 }, // Realisasi
@@ -231,32 +496,70 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
     XLSX.writeFile(wb, filename);
   };
 
-  // Renders a single row of the tree table
-  const renderTreeRow = (item: LraReportItem, depth: number = 0) => {
+  // Renders a single row of the tree table using 3 split code columns (for SKPD)
+  const renderTreeRow = (
+    item: LraReportItem,
+    depth: number = 0,
+    activeUrusanBidang: string = '',
+    activeProgramKegiatanSubkeg: string = ''
+  ) => {
     const isExpanded = !!expandedKeys[item.kode];
     const hasChildren = item.children && item.children.length > 0;
     const sisaRatio = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
 
+    let col1 = '';
+    let col2 = '';
+    let col3 = '';
+
+    if (item.jenis === 'urusan' || item.jenis === 'bidang') {
+      col1 = item.kode;
+    } else if (item.jenis === 'program' || item.jenis === 'kegiatan' || item.jenis === 'sub_kegiatan') {
+      col1 = activeUrusanBidang;
+      col2 = item.kode;
+    } else {
+      col1 = activeUrusanBidang;
+      col2 = activeProgramKegiatanSubkeg;
+      col3 = item.kode;
+    }
+
+    let nextUrusanBidang = activeUrusanBidang;
+    let nextProgramKegiatanSubkeg = activeProgramKegiatanSubkeg;
+
+    if (item.jenis === 'urusan' || item.jenis === 'bidang') {
+      nextUrusanBidang = item.kode;
+    } else if (item.jenis === 'program' || item.jenis === 'kegiatan' || item.jenis === 'sub_kegiatan') {
+      nextProgramKegiatanSubkeg = item.kode;
+    }
+
     // Different backgrounds per depth level to establish clean visual rhythm
     const depthBgClass = 
       depth === 0 
-        ? 'bg-gray-100/80 font-bold border-b border-gray-200' 
+        ? 'bg-gray-100/90 font-bold border-b border-gray-200 text-gray-950' 
         : depth === 1 
-        ? 'bg-gray-50/50 font-semibold border-b border-gray-150' 
-        : 'hover:bg-gray-50/40 border-b border-gray-100';
+        ? 'bg-gray-50/70 font-semibold border-b border-gray-150 text-gray-900' 
+        : 'hover:bg-gray-50/40 border-b border-gray-100 text-gray-800';
 
     return (
       <React.Fragment key={`${item.kode}-${item.jenis}`}>
         <tr className={`text-xs ${depthBgClass} transition-colors`}>
-          <td className="py-2.5 px-4 font-mono font-medium text-gray-500 whitespace-nowrap">
-            {item.kode}
+          {/* Column 1: Urusan/Bidang */}
+          <td className="py-2.5 px-4 font-mono font-medium text-gray-600 whitespace-nowrap border-r border-gray-100/50">
+            {col1}
+          </td>
+          {/* Column 2: Program/Kegiatan/Sub-Kegiatan */}
+          <td className="py-2.5 px-4 font-mono font-medium text-gray-600 whitespace-nowrap border-r border-gray-100/50">
+            {col2}
+          </td>
+          {/* Column 3: Rekening */}
+          <td className="py-2.5 px-4 font-mono font-medium text-gray-600 whitespace-nowrap border-r border-gray-100/50">
+            {col3}
           </td>
           <td className="py-2.5 px-4 max-w-md">
-            <div className="flex items-center" style={{ paddingLeft: `${depth * 16}px` }}>
+            <div className="flex items-center" style={{ paddingLeft: `${depth * 12}px` }}>
               {hasChildren ? (
                 <button
                   onClick={() => toggleExpand(item.kode)}
-                  className="mr-1.5 p-1 rounded hover:bg-gray-250 cursor-pointer text-gray-500 print:hidden"
+                  className="mr-1.5 p-1 rounded hover:bg-gray-200 cursor-pointer text-gray-500 print:hidden"
                 >
                   {isExpanded ? (
                     <ChevronDown className="w-3.5 h-3.5" />
@@ -267,11 +570,8 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
               ) : (
                 <span className="w-5 print:hidden" />
               )}
-              <span className={depth === 0 ? 'text-gray-950 uppercase text-[11px] tracking-wide' : 'text-gray-800'}>
+              <span className={depth === 0 ? 'text-gray-950 font-bold uppercase text-[11px] tracking-wide' : 'text-gray-800'}>
                 {item.uraian}
-              </span>
-              <span className="ml-2 text-[9px] font-semibold text-gray-400 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded uppercase print:hidden">
-                {item.jenis === 'kelompok_besar' ? 'ROOT' : item.jenis}
               </span>
             </div>
           </td>
@@ -285,18 +585,9 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
             {formatRupiah(item.sisa_anggaran)}
           </td>
           <td className="py-2.5 px-4 text-right">
-            <div className="flex items-center justify-end space-x-2">
-              {/* Micro-progress indicator */}
-              <div className="w-12 bg-gray-100 rounded-full h-1.5 hidden sm:block overflow-hidden border border-gray-200/50 print:hidden">
-                <div
-                  className={`h-full rounded-full ${sisaRatio > 100 ? 'bg-rose-500' : 'bg-gray-900'}`}
-                  style={{ width: `${Math.min(100, sisaRatio)}%` }}
-                />
-              </div>
-              <span className="font-mono font-semibold text-[11px] text-gray-800 w-12 text-right">
-                {sisaRatio.toFixed(1)}%
-              </span>
-            </div>
+            <span className="font-mono font-semibold text-[11px] text-gray-800 w-12 text-right">
+              {sisaRatio.toFixed(1)}%
+            </span>
           </td>
           <td className="py-2.5 px-4 text-right font-mono font-medium text-gray-900">
             {formatRupiah(item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi))}
@@ -304,8 +595,117 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
         </tr>
         
         {/* Render children if expanded */}
-        {hasChildren && isExpanded && item.children!.map(child => renderTreeRow(child, depth + 1))}
+        {hasChildren && isExpanded && item.children!.map(child => renderTreeRow(child, depth + 1, nextUrusanBidang, nextProgramKegiatanSubkeg))}
       </React.Fragment>
+    );
+  };
+
+  // Renders a single row of the tree table for Pemda (only 1 code column, recursively)
+  const renderPemdaRow = (item: LraReportItem, depth: number = 0) => {
+    const isExpanded = !!expandedKeys[item.kode];
+    const hasChildren = item.children && item.children.length > 0;
+    const sisaRatio = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
+
+    // Background colors matching depth
+    const depthBgClass = 
+      depth === 0 
+        ? 'bg-gray-100/90 font-bold border-b border-gray-200 text-gray-950' 
+        : depth === 1 
+        ? 'bg-gray-50/70 font-semibold border-b border-gray-150 text-gray-900' 
+        : depth === 2
+        ? 'bg-white/50 hover:bg-gray-50/30 border-b border-gray-100 text-gray-800'
+        : 'bg-white/30 hover:bg-gray-50/45 border-b border-gray-100/50 text-gray-700 italic';
+
+    return (
+      <React.Fragment key={`${item.kode}-${item.jenis}`}>
+        <tr className={`text-xs ${depthBgClass} transition-colors`}>
+          {/* Column 1: Single Code Column for Rekening */}
+          <td className="py-2.5 px-4 font-mono font-medium text-gray-700 whitespace-nowrap border-r border-gray-100/50">
+            {item.kode}
+          </td>
+          {/* Column 2: Uraian Nama Rekening */}
+          <td className="py-2.5 px-4 max-w-md">
+            <div className="flex items-center" style={{ paddingLeft: `${depth * 12}px` }}>
+              {hasChildren ? (
+                <button
+                  onClick={() => toggleExpand(item.kode)}
+                  className="mr-1.5 p-1 rounded hover:bg-gray-200 cursor-pointer text-gray-500 print:hidden"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              ) : (
+                <span className="w-5 print:hidden" />
+              )}
+              <span className={depth === 0 ? 'text-gray-950 font-bold uppercase text-[11px] tracking-wide' : 'text-gray-800'}>
+                {item.uraian}
+              </span>
+            </div>
+          </td>
+          {/* Financial columns */}
+          <td className="py-2.5 px-4 text-right font-mono font-medium text-gray-900">
+            {formatRupiah(item.anggaran)}
+          </td>
+          <td className="py-2.5 px-4 text-right font-mono font-medium text-gray-900">
+            {formatRupiah(item.realisasi)}
+          </td>
+          <td className={`py-2.5 px-4 text-right font-mono font-medium ${item.sisa_anggaran < 0 ? 'text-rose-600' : 'text-gray-950'}`}>
+            {formatRupiah(item.sisa_anggaran)}
+          </td>
+          <td className="py-2.5 px-4 text-right">
+            <span className="font-mono font-semibold text-[11px] text-gray-800 w-12 text-right">
+              {sisaRatio.toFixed(1)}%
+            </span>
+          </td>
+          <td className="py-2.5 px-4 text-right font-mono font-medium text-gray-900">
+            {formatRupiah(item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi))}
+          </td>
+        </tr>
+        
+        {/* Render children recursively if expanded */}
+        {hasChildren && isExpanded && item.children!.map(child => renderPemdaRow(child, depth + 1))}
+      </React.Fragment>
+    );
+  };
+
+  const renderSummaryRow = (item: any, labelClass = "text-emerald-950") => {
+    return (
+      <tr className="bg-emerald-50/50 font-bold text-xs border-b border-emerald-100 text-gray-950">
+        {reportType === 'skpd' ? (
+          <>
+            <td className="py-3 px-4 border-r border-gray-100/50"></td>
+            <td className="py-3 px-4 border-r border-gray-100/50"></td>
+            <td className="py-3 px-4 border-r border-gray-100/50"></td>
+          </>
+        ) : (
+          <td className="py-3 px-4 border-r border-gray-100/50"></td>
+        )}
+        <td className={`py-3 px-4 uppercase tracking-wide ${labelClass}`}>
+          {item.uraian}
+        </td>
+        <td className="py-3 px-4 text-right font-mono">{formatRupiah(item.anggaran)}</td>
+        <td className="py-3 px-4 text-right font-mono">{formatRupiah(item.realisasi)}</td>
+        <td className={`py-3 px-4 text-right font-mono ${item.sisa_anggaran < 0 ? 'text-rose-600' : ''}`}>
+          {formatRupiah(item.sisa_anggaran)}
+        </td>
+        <td className="py-3 px-4 text-right font-mono">
+          {item.persentase.toFixed(1)}%
+        </td>
+        <td className="py-3 px-4 text-right font-mono">
+          {formatRupiah(item.prognosis)}
+        </td>
+      </tr>
+    );
+  };
+
+  const renderEmptyRow = () => {
+    return (
+      <tr className="h-6 bg-white border-b border-gray-100/30 print:h-8">
+        <td colSpan={reportType === 'pemda' ? 7 : 9} className="py-2 px-4"></td>
+      </tr>
     );
   };
 
@@ -458,56 +858,107 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
           <div className="overflow-x-auto no-scrollbar">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-gray-100 text-gray-400 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
-                  <th className="py-3 px-4 font-semibold w-32">Kode Rekening</th>
+                <tr className="bg-gray-100 text-gray-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
+                  {reportType === 'skpd' ? (
+                    <>
+                      <th className="py-3 px-4 font-semibold w-24">Urusan/Bidang</th>
+                      <th className="py-3 px-4 font-semibold w-40">Prog/Keg/Subkeg</th>
+                      <th className="py-3 px-4 font-semibold w-28">Rekening</th>
+                    </>
+                  ) : (
+                    <th className="py-3 px-4 font-semibold w-40">Kode Rekening</th>
+                  )}
                   <th className="py-3 px-4 font-semibold">Uraian Nama Rekening / Program</th>
-                  <th className="py-3 px-4 font-semibold text-right w-44">Anggaran</th>
-                  <th className="py-3 px-4 font-semibold text-right w-44">Realisasi</th>
-                  <th className="py-3 px-4 font-semibold text-right w-44">Sisa Anggaran</th>
-                  <th className="py-3 px-4 font-semibold text-right w-36">Persentase</th>
+                  <th className="py-3 px-4 font-semibold text-right w-36">Anggaran</th>
+                  <th className="py-3 px-4 font-semibold text-right w-36">Realisasi</th>
+                  <th className="py-3 px-4 font-semibold text-right w-36">Sisa Anggaran</th>
+                  <th className="py-3 px-4 font-semibold text-right w-24">Persentase</th>
                   <th className="py-3 px-4 font-semibold text-right w-44">Prognosis 6 (Enam) Bulan Berikutnya</th>
                 </tr>
               </thead>
               <tbody>
-                {reportType === 'skpd' 
-                  ? filteredReportData.map(item => renderTreeRow(item))
-                  : filteredReportData.map(group => (
-                      <React.Fragment key={group.kode}>
-                        {/* Parent Group Header (Level 1) */}
-                        <tr className="bg-gray-100 text-[11px] font-bold border-b border-gray-200">
-                          <td className="py-2.5 px-4 font-mono text-gray-950">{group.kode}</td>
-                          <td className="py-2.5 px-4 text-gray-950 uppercase tracking-wide">{group.uraian}</td>
-                          <td className="py-2.5 px-4 text-right text-gray-950">{formatRupiah(group.anggaran)}</td>
-                          <td className="py-2.5 px-4 text-right text-gray-950">{formatRupiah(group.realisasi)}</td>
-                          <td className="py-2.5 px-4 text-right text-gray-950">{formatRupiah(group.sisa_anggaran)}</td>
-                          <td className="py-2.5 px-4 text-right text-gray-950 font-mono font-bold">
-                            {group.persentase.toFixed(1)}%
-                          </td>
-                          <td className="py-2.5 px-4 text-right text-gray-950">{formatRupiah(group.prognosis !== undefined ? group.prognosis : (group.anggaran - group.realisasi))}</td>
-                        </tr>
+                {(() => {
+                  const calcs = getLraCalculations(reportData);
+                  const pNode = filteredReportData.find(item => item.kode === '4');
+                  const bNode = filteredReportData.find(item => item.kode === '5');
+                  const fNode = filteredReportData.find(item => item.kode === '6');
+
+                  if (reportType === 'skpd') {
+                    return (
+                      <>
+                        {/* 1. Pendapatan */}
+                        {calcs.pendapatan && (pNode || !searchQuery) && renderTreeRow(pNode || calcs.pendapatan)}
                         
-                        {/* Children Rows (Level 3) */}
-                        {group.children?.map(item => {
-                          const sisaRatio = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
-                          return (
-                            <tr key={item.kode} className="text-xs hover:bg-gray-50/50 border-b border-gray-100">
-                              <td className="py-2 px-4 font-mono text-gray-500 pl-6">{item.kode}</td>
-                              <td className="py-2 px-4 text-gray-800">{item.uraian}</td>
-                              <td className="py-2 px-4 text-right font-mono text-gray-700">{formatRupiah(item.anggaran)}</td>
-                              <td className="py-2 px-4 text-right font-mono text-gray-700">{formatRupiah(item.realisasi)}</td>
-                              <td className="py-2 px-4 text-right font-mono text-gray-700">{formatRupiah(item.sisa_anggaran)}</td>
-                              <td className="py-2 px-4 text-right">
-                                <span className="font-mono font-semibold text-gray-800">
-                                  {sisaRatio.toFixed(1)}%
-                                </span>
-                              </td>
-                              <td className="py-2 px-4 text-right font-mono text-gray-700">{formatRupiah(item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi))}</td>
-                            </tr>
-                          );
-                        })}
-                      </React.Fragment>
-                    ))
-                }
+                        {/* Space */}
+                        {!searchQuery && renderEmptyRow()}
+
+                        {/* 2. Belanja */}
+                        {calcs.belanja && (bNode || !searchQuery) && renderTreeRow(bNode || calcs.belanja)}
+
+                        {/* Space */}
+                        {!searchQuery && renderEmptyRow()}
+
+                        {/* 3. Surplus / Defisit */}
+                        {!searchQuery && renderSummaryRow(calcs.surplusDefisit, "text-amber-800")}
+
+                        {/* Space */}
+                        {!searchQuery && renderEmptyRow()}
+
+                        {/* 4. Pembiayaan */}
+                        {calcs.hasPembiayaan && (fNode || !searchQuery) && renderTreeRow(fNode ? { ...fNode, ...calcs.pembiayaan } : calcs.pembiayaan)}
+
+                        {/* Space */}
+                        {calcs.hasPembiayaan && !searchQuery && renderEmptyRow()}
+
+                        {/* 5. Pembiayaan Netto */}
+                        {calcs.hasPembiayaan && !searchQuery && renderSummaryRow(calcs.pembiayaanNetto, "text-blue-900")}
+
+                        {/* Space */}
+                        {calcs.hasPembiayaan && !searchQuery && renderEmptyRow()}
+
+                        {/* 6. SiLPA */}
+                        {!searchQuery && renderSummaryRow(calcs.silpa, "text-emerald-950")}
+                      </>
+                    );
+                  } else {
+                    return (
+                      <>
+                        {/* 1. Pendapatan */}
+                        {pNode && renderPemdaRow(pNode)}
+                        
+                        {/* Space */}
+                        {!searchQuery && renderEmptyRow()}
+
+                        {/* 2. Belanja */}
+                        {bNode && renderPemdaRow(bNode)}
+
+                        {/* Space */}
+                        {!searchQuery && renderEmptyRow()}
+
+                        {/* 3. Surplus / Defisit */}
+                        {!searchQuery && renderSummaryRow(calcs.surplusDefisit, "text-amber-800")}
+
+                        {/* Space */}
+                        {!searchQuery && renderEmptyRow()}
+
+                        {/* 4. Pembiayaan */}
+                        {calcs.hasPembiayaan && fNode && renderPemdaRow({ ...fNode, ...calcs.pembiayaan })}
+
+                        {/* Space */}
+                        {calcs.hasPembiayaan && !searchQuery && renderEmptyRow()}
+
+                        {/* 5. Pembiayaan Netto */}
+                        {calcs.hasPembiayaan && !searchQuery && renderSummaryRow(calcs.pembiayaanNetto, "text-blue-900")}
+
+                        {/* Space */}
+                        {calcs.hasPembiayaan && !searchQuery && renderEmptyRow()}
+
+                        {/* 6. SiLPA */}
+                        {!searchQuery && renderSummaryRow(calcs.silpa, "text-emerald-950")}
+                      </>
+                    );
+                  }
+                })()}
               </tbody>
             </table>
           </div>

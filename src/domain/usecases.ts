@@ -644,46 +644,29 @@ export class LraUseCase {
       mapPendPembPrognosis.set(`${p.kode_skpd}-${p.kode_rekening}`, p.nilai_prognosis);
     }
 
-    // Group only by level 3 accounts
-    const mapLevel3: { [kode: string]: { uraian: string; anggaran: number; realisasi: number; prognosis: number } } = {};
-
-    // Map each leaf account to its level 3 parent
-    const getLevel3Parent = (kode: string): { kode: string; uraian: string } | null => {
-      if (kode.length < 6) return null;
-      const lvl3Kode = kode.substring(0, 6);
-      const master = masterRef.find(m => m.kode === lvl3Kode && m.jenis === 'rekening');
-      return {
-        kode: lvl3Kode,
-        uraian: master ? master.uraian : `Rekening Golongan ${lvl3Kode}`
-      };
+    const mapMaster = new Map(masterRef.map(m => [`${m.kode}-${m.jenis}`, m]));
+    const getHierarchyName = (kode: string, level: number): string => {
+      const lvlKode = kode.substring(0, level === 1 ? 1 : level === 2 ? 3 : level === 3 ? 6 : level === 4 ? 9 : 13);
+      const ref = mapMaster.get(`${lvlKode}-rekening`);
+      return ref ? ref.uraian : `Kelompok Akun ${lvlKode}`;
     };
 
-    const getLevel1Parent = (kode: string): { kode: string; uraian: string } | null => {
-      const lvl1Kode = kode.substring(0, 1);
-      const master = masterRef.find(m => m.kode === lvl1Kode && m.jenis === 'rekening');
-      return {
-        kode: lvl1Kode,
-        uraian: master ? master.uraian : `Kelompok Akun ${lvl1Kode}`
-      };
-    };
+    const level1Map = new Map<string, LraReportItem>();
+    const level2Map = new Map<string, LraReportItem>();
+    const level3Map = new Map<string, LraReportItem>();
+    const level4Map = new Map<string, LraReportItem>();
 
     for (const d of rawData) {
-      const parent3 = getLevel3Parent(d.kode_rekening);
-      if (!parent3) continue;
+      if (d.kode_rekening.length < 6) continue;
 
-      if (!mapLevel3[parent3.kode]) {
-        mapLevel3[parent3.kode] = {
-          uraian: parent3.uraian,
-          anggaran: 0,
-          realisasi: 0,
-          prognosis: 0
-        };
-      }
-      mapLevel3[parent3.kode].anggaran += d.anggaran;
-      mapLevel3[parent3.kode].realisasi += d.realisasi;
+      const l1 = d.kode_rekening.substring(0, 1);
+      const l2 = d.kode_rekening.substring(0, 3);
+      const l3 = d.kode_rekening.substring(0, 6);
+      const is42 = d.kode_rekening.startsWith('4.2');
+      const l4 = is42 && d.kode_rekening.length >= 9 ? d.kode_rekening.substring(0, 9) : null;
 
-      // Find prognosis for this leaf record
-      let recordPrognosis = d.anggaran - d.realisasi; // default to sisa
+      // Find prognosis
+      let recordPrognosis = d.anggaran - d.realisasi;
       if (d.kode_rekening.startsWith('5')) {
         const key = `${d.kode_skpd}-${d.kode_sub_kegiatan || 'UNKNOWN'}-${d.kode_rekening}`;
         if (mapBelanjaPrognosis.has(key)) {
@@ -695,35 +678,12 @@ export class LraUseCase {
           recordPrognosis = mapPendPembPrognosis.get(key)!;
         }
       }
-      mapLevel3[parent3.kode].prognosis += recordPrognosis;
-    }
 
-    const list: LraReportItem[] = Object.keys(mapLevel3).map(kode => {
-      const item = mapLevel3[kode];
-      const sisa = item.anggaran - item.realisasi;
-      const persentase = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
-      return {
-        kode,
-        uraian: item.uraian,
-        jenis: 'rekening',
-        anggaran: item.anggaran,
-        realisasi: item.realisasi,
-        sisa_anggaran: sisa,
-        persentase,
-        prognosis: item.prognosis
-      };
-    });
-
-    // Group under their level 1 parents (4 for Income, 5 for Expense, 6 for Finance)
-    const level1Groups: { [kode: string]: LraReportItem } = {};
-    for (const item of list) {
-      const parent1 = getLevel1Parent(item.kode);
-      if (!parent1) continue;
-
-      if (!level1Groups[parent1.kode]) {
-        level1Groups[parent1.kode] = {
-          kode: parent1.kode,
-          uraian: parent1.uraian,
+      // Aggregate L1
+      if (!level1Map.has(l1)) {
+        level1Map.set(l1, {
+          kode: l1,
+          uraian: l1 === '4' ? 'PENDAPATAN DAERAH' : l1 === '5' ? 'BELANJA DAERAH' : 'PEMBIAYAAN DAERAH',
           jenis: 'kelompok_besar',
           anggaran: 0,
           realisasi: 0,
@@ -731,22 +691,121 @@ export class LraUseCase {
           persentase: 0,
           prognosis: 0,
           children: []
-        };
+        });
       }
-      const group = level1Groups[parent1.kode];
-      group.anggaran += item.anggaran;
-      group.realisasi += item.realisasi;
-      group.sisa_anggaran += item.sisa_anggaran;
-      group.prognosis = (group.prognosis || 0) + (item.prognosis || 0);
-      group.children!.push(item);
+      const node1 = level1Map.get(l1)!;
+      node1.anggaran += d.anggaran;
+      node1.realisasi += d.realisasi;
+      node1.prognosis = (node1.prognosis || 0) + recordPrognosis;
+
+      // Aggregate L2
+      if (!level2Map.has(l2)) {
+        level2Map.set(l2, {
+          kode: l2,
+          uraian: getHierarchyName(l2, 2),
+          jenis: 'rekening_level2',
+          anggaran: 0,
+          realisasi: 0,
+          sisa_anggaran: 0,
+          persentase: 0,
+          prognosis: 0,
+          children: []
+        });
+      }
+      const node2 = level2Map.get(l2)!;
+      node2.anggaran += d.anggaran;
+      node2.realisasi += d.realisasi;
+      node2.prognosis = (node2.prognosis || 0) + recordPrognosis;
+
+      // Aggregate L3
+      if (!level3Map.has(l3)) {
+        level3Map.set(l3, {
+          kode: l3,
+          uraian: getHierarchyName(l3, 3),
+          jenis: 'rekening_level3',
+          anggaran: 0,
+          realisasi: 0,
+          sisa_anggaran: 0,
+          persentase: 0,
+          prognosis: 0,
+          children: []
+        });
+      }
+      const node3 = level3Map.get(l3)!;
+      node3.anggaran += d.anggaran;
+      node3.realisasi += d.realisasi;
+      node3.prognosis = (node3.prognosis || 0) + recordPrognosis;
+
+      // Aggregate L4 if applicable
+      if (l4) {
+        if (!level4Map.has(l4)) {
+          level4Map.set(l4, {
+            kode: l4,
+            uraian: getHierarchyName(l4, 4),
+            jenis: 'rekening',
+            anggaran: 0,
+            realisasi: 0,
+            sisa_anggaran: 0,
+            persentase: 0,
+            prognosis: 0
+          });
+        }
+        const node4 = level4Map.get(l4)!;
+        node4.anggaran += d.anggaran;
+        node4.realisasi += d.realisasi;
+        node4.prognosis = (node4.prognosis || 0) + recordPrognosis;
+      }
     }
 
-    // Recalculate percent for parent groups
-    return Object.values(level1Groups).map(g => {
-      g.persentase = g.anggaran > 0 ? (g.realisasi / g.anggaran) * 100 : 0;
-      g.children!.sort((a, b) => a.kode.localeCompare(b.kode));
-      return g;
-    });
+    // 1. Link Level 4 to Level 3
+    for (const [l4, node4] of level4Map.entries()) {
+      const l3 = l4.substring(0, 6);
+      const parent3 = level3Map.get(l3);
+      if (parent3) {
+        if (!parent3.children) parent3.children = [];
+        parent3.children.push(node4);
+      }
+    }
+
+    // 2. Link Level 3 to Level 2
+    for (const [l3, node3] of level3Map.entries()) {
+      const l2 = l3.substring(0, 3);
+      const parent2 = level2Map.get(l2);
+      if (parent2) {
+        if (!parent2.children) parent2.children = [];
+        parent2.children.push(node3);
+      }
+    }
+
+    // 3. Link Level 2 to Level 1
+    for (const [l2, node2] of level2Map.entries()) {
+      const l1 = l2.substring(0, 1);
+      const parent1 = level1Map.get(l1);
+      if (parent1) {
+        if (!parent1.children) parent1.children = [];
+        parent1.children.push(node2);
+      }
+    }
+
+    const finalizeNode = (node: LraReportItem) => {
+      node.sisa_anggaran = node.anggaran - node.realisasi;
+      node.persentase = node.anggaran > 0 ? (node.realisasi / node.anggaran) * 100 : 0;
+      if (node.children) {
+        node.children.forEach(finalizeNode);
+        node.children.sort((a, b) => a.kode.localeCompare(b.kode));
+      }
+    };
+
+    const finalRoots: LraReportItem[] = [];
+    for (const l1 of ['4', '5', '6']) {
+      const node = level1Map.get(l1);
+      if (node) {
+        finalizeNode(node);
+        finalRoots.push(node);
+      }
+    }
+
+    return finalRoots;
   }
 
   private buildHierarchicalReport(
