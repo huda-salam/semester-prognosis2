@@ -618,7 +618,7 @@ export function createApiRouter(): Router {
       }
 
       const result = await db.raw(sql);
-      res.json({ success: true, data: result });
+      res.json({ success: true, data: result.command ? result : result[0] });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
     }

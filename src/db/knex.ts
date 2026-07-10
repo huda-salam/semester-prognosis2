@@ -54,6 +54,7 @@ if (dbClient === 'pg' || dbClient === 'postgresql' || dbClient === 'postgres') {
       user: process.env.DB_USER || 'root',
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_DATABASE || 'prognosis',
+      decimalNumbers: true, // Ensure decimal types are returned as numbers
     },
     pool: { min: 2, max: 10 }
   };
