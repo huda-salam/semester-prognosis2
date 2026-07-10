@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Building2, Shield, UserCircle, Key, Lock, Mail, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Building2, UserCircle, Lock, AlertCircle } from 'lucide-react';
 import { getApiUrl } from '../utils/api';
 
 interface LoginFormProps {
@@ -17,7 +17,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showDemoHelp, setShowDemoHelp] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,12 +56,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const setDemoCredentials = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setError('');
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans antialiased">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
@@ -92,6 +85,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
                 initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="rounded-xl bg-red-50 p-4 border border-red-100 flex items-start space-x-3 text-red-700 text-xs leading-relaxed"
+                id="error-alert"
               >
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span className="font-semibold">{error}</span>
@@ -154,80 +148,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
               </button>
             </div>
           </form>
-
-          {/* Demo account quick credentials drawer */}
-          <div className="mt-8 border-t border-gray-100 pt-6">
-            <button
-              id="demo-help-toggle"
-              type="button"
-              onClick={() => setShowDemoHelp(!showDemoHelp)}
-              className="w-full flex items-center justify-between text-xs text-gray-500 hover:text-gray-800 transition-colors py-1 cursor-pointer font-bold uppercase tracking-wider"
-            >
-              <span className="flex items-center space-x-1.5">
-                <Key className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Bantuan Akun Demo & Admin</span>
-              </span>
-              {showDemoHelp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-
-            {showDemoHelp && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="mt-3 space-y-2.5 text-[11px] leading-relaxed overflow-hidden text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-150"
-              >
-                <p className="font-semibold text-gray-700">Silakan gunakan salah satu akun di bawah untuk pengujian cepat:</p>
-                <div className="space-y-2">
-                  <div className="border-b border-gray-200/50 pb-2">
-                    <span className="font-bold text-amber-700 uppercase tracking-wider text-[9px] block mb-0.5">ADMIN PEMDA (AKSES PENUH):</span>
-                    <button
-                      id="demo-credential-admin"
-                      type="button"
-                      onClick={() => setDemoCredentials('akuntansi.bpkadkdr@gmail.com', '123456')}
-                      className="w-full text-left bg-white border border-gray-200/80 hover:bg-emerald-50 hover:border-emerald-200 rounded px-2.5 py-1.5 font-mono text-[10px] text-gray-800 transition-all flex items-center justify-between cursor-pointer"
-                    >
-                      <span>
-                        U: <strong className="text-gray-900">akuntansi.bpkadkdr@gmail.com</strong><br />
-                        P: <strong className="text-gray-900">123456</strong>
-                      </span>
-                      <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wide font-sans">Pilih</span>
-                    </button>
-                  </div>
-
-                  <div>
-                    <span className="font-bold text-emerald-700 uppercase tracking-wider text-[9px] block mb-0.5">USER SKPD (LOCKED TO ACC):</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        id="demo-credential-pendidikan"
-                        type="button"
-                        onClick={() => setDemoCredentials('pendidikan', '123456')}
-                        className="text-left bg-white border border-gray-200/80 hover:bg-emerald-50 hover:border-emerald-200 rounded px-2.5 py-1.5 font-mono text-[10px] text-gray-800 transition-all flex items-center justify-between cursor-pointer"
-                      >
-                        <span>
-                          U: <strong className="text-gray-900">pendidikan</strong><br />
-                          P: <strong className="text-gray-900">123456</strong>
-                        </span>
-                        <span className="text-[9px] text-gray-400 font-bold font-sans">»</span>
-                      </button>
-                      <button
-                        id="demo-credential-kesehatan"
-                        type="button"
-                        onClick={() => setDemoCredentials('kesehatan', '123456')}
-                        className="text-left bg-white border border-gray-200/80 hover:bg-emerald-50 hover:border-emerald-200 rounded px-2.5 py-1.5 font-mono text-[10px] text-gray-800 transition-all flex items-center justify-between cursor-pointer"
-                      >
-                        <span>
-                          U: <strong className="text-gray-900">kesehatan</strong><br />
-                          P: <strong className="text-gray-900">123456</strong>
-                        </span>
-                        <span className="text-[9px] text-gray-400 font-bold font-sans">»</span>
-                      </button>
-                    </div>
-                    <p className="mt-1.5 text-[9px] text-gray-400 italic">Mendukung semua username dari spreadsheet excel, password semuanya 123456.</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </div>
 
         </div>
       </div>
