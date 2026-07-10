@@ -18,3 +18,8 @@ View your app in AI Studio: https://ai.studio/apps/e010b213-c077-48d2-8c7f-bb004
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Production Deployment & Configuration
+
+Untuk panduan lengkap cara menjalankan aplikasi di server produksi, konfigurasi Nginx Reverse Proxy, pengaturan Trusted Proxy, penanganan subpath URL (seperti `/semester`), manajemen proses dengan PM2, serta cara mengatasi masalah *Connection Refused*, silakan baca **[Panduan Produksi Komprehensif kami di sini](./docs/PRODUCTION.md)**.
+
