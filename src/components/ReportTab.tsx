@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Folder, ChevronRight, ChevronDown, Table, FileText, Download, ListFilter, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { Search, Folder, ChevronRight, ChevronDown, Table, FileText, Download, ListFilter, AlertCircle, FileSpreadsheet, Layers, Printer, AlertTriangle, HelpCircle, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { LraReportItem } from '../types';
 import { getApiUrl } from '../utils/api';
@@ -173,13 +173,19 @@ const getLraCalculations = (data: LraReportItem[]) => {
 };
 
 export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList }) => {
-  const [reportType, setReportType] = useState<'skpd' | 'pemda'>('skpd');
+  const [reportType, setReportType] = useState<'skpd' | 'pemda' | 'subrincian'>('skpd');
   const [tahun, setTahun] = useState<number>(2026);
   const [bulan, setBulan] = useState<number>(6); // June default
   const [loading, setLoading] = useState<boolean>(false);
   const [reportData, setReportData] = useState<LraReportItem[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   
+  // State for printing all SKPDs (used by Pemda)
+  const [allSkpdsReportData, setAllSkpdsReportData] = useState<{ kodeSkpd: string; namaSkpd: string; items: LraReportItem[] }[]>([]);
+  const [printingAll, setPrintingAll] = useState<boolean>(false);
+  const [printingSingle, setPrintingSingle] = useState<boolean>(false);
+  const [showPrintGuide, setShowPrintGuide] = useState<boolean>(false);
+
   // Set of expanded item codes in tree view
   const [expandedKeys, setExpandedKeys] = useState<{ [kode: string]: boolean }>({
     '4': true, '5': true, '6': true // Default expand root types
@@ -206,6 +212,8 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
       let url = '';
       if (reportType === 'skpd') {
         url = `/api/report/skpd?tahun=${tahun}&bulan=${bulan}&kode_skpd=${activeSkpd}`;
+      } else if (reportType === 'subrincian') {
+        url = `/api/report/subrincian?tahun=${tahun}&bulan=${bulan}&kode_skpd=${activeSkpd}`;
       } else {
         url = `/api/report/pemda?tahun=${tahun}&bulan=${bulan}`;
       }
@@ -226,6 +234,65 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
       setReportData([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadSingleSkpdPdf = async () => {
+    setPrintingSingle(true);
+    try {
+      const url = `/api/report/subrincian-pdf?tahun=${tahun}&bulan=${bulan}&kode_skpd=${activeSkpd}`;
+      const res = await fetch(getApiUrl(url), {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error('Gagal mengunduh berkas PDF dari server');
+      }
+      const blob = await res.blob();
+      const fileUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = fileUrl;
+      const cleanName = activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_');
+      a.download = `LRA_SUBRINCIAN_${cleanName}_${bulan}_${tahun}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(fileUrl);
+    } catch (err: any) {
+      console.error('Failed to download single SKPD PDF:', err);
+      alert('Gagal memproses unduhan PDF SKPD dari server: ' + err.message);
+    } finally {
+      setPrintingSingle(false);
+    }
+  };
+
+  const handlePrintAllSkpds = async () => {
+    setPrintingAll(true);
+    try {
+      const url = `/api/report/subrincian-all-pdf?tahun=${tahun}&bulan=${bulan}`;
+      const res = await fetch(getApiUrl(url), {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error('Gagal mengunduh berkas PDF dari server');
+      }
+      const blob = await res.blob();
+      const fileUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = fileUrl;
+      a.download = `LRA_SUBRINCIAN_SEMUA_SKPD_${bulan}_${tahun}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(fileUrl);
+    } catch (err: any) {
+      console.error('Failed to print all SKPDs:', err);
+      alert('Gagal memproses cetak semua SKPD dari server: ' + err.message);
+    } finally {
+      setPrintingAll(false);
     }
   };
 
@@ -305,11 +372,20 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
       'Prognosis 6 (Enam) Bulan Berikutnya'
     ];
     
+    let excelReportTitle = '';
+    if (reportType === 'skpd') {
+      excelReportTitle = 'LAPORAN REALISASI ANGGARAN (LRA) SKPD';
+    } else if (reportType === 'subrincian') {
+      excelReportTitle = `LAPORAN REALISASI ANGGARAN (LRA) SUBRINCIAN OBJEK - ${activeSkpdName}`;
+    } else {
+      excelReportTitle = 'LAPORAN REALISASI KONSOLIDASI APBD';
+    }
+
     const data: any[][] = [
       ['PEMERINTAH KABUPATEN KEDIRI'],
-      [reportType === 'skpd' ? 'LAPORAN REALISASI ANGGARAN (LRA) SKPD' : 'LAPORAN REALISASI KONSOLIDASI APBD'],
+      [excelReportTitle],
       [`Tahun Anggaran: ${tahun}`],
-      [`SKPD: ${reportType === 'skpd' ? activeSkpdName : 'KABUPATEN KEDIRI (KONSOLIDASI)'}`],
+      [`SKPD: ${reportType === 'pemda' ? 'KABUPATEN KEDIRI (KONSOLIDASI)' : activeSkpdName}`],
       [`Periode: s.d. ${months.find(m => m.value === bulan)?.label.replace(' (Semester I)', '').replace(' (Semester II)', '')} ${tahun}`],
       [], // Empty row
       headers
@@ -492,7 +568,13 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
       .replace(' (Semester II)', '')
       .replace(/[^a-zA-Z0-9]/g, '_') || '';
     
-    const filename = `LRA_${reportType === 'skpd' ? activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_') : 'KONSOLIDASI'}_${labelBulan}_${tahun}.xlsx`;
+    const typeLabel = reportType === 'skpd' 
+      ? activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_') 
+      : (reportType === 'subrincian' 
+        ? `SUBRINCIAN_${activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_')}` 
+        : 'KONSOLIDASI');
+        
+    const filename = `LRA_${typeLabel}_${labelBulan}_${tahun}.xlsx`;
     XLSX.writeFile(wb, filename);
   };
 
@@ -704,7 +786,71 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
   const renderEmptyRow = () => {
     return (
       <tr className="h-6 bg-white border-b border-gray-100/30 print:h-8">
-        <td colSpan={reportType === 'pemda' ? 7 : 9} className="py-2 px-4"></td>
+        <td colSpan={reportType === 'skpd' ? 9 : 7} className="py-2 px-4"></td>
+      </tr>
+    );
+  };
+
+  const renderPrintRow = (item: LraReportItem, depth: number = 0): React.ReactNode => {
+    const sisaRatio = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
+    const hasChildren = item.children && item.children.length > 0;
+
+    return (
+      <React.Fragment key={`${item.kode}-${item.jenis}-print`}>
+        <tr className="text-[10px] border-b border-gray-300 page-break-inside-avoid">
+          <td className="py-1.5 px-2 font-mono border border-gray-300 whitespace-nowrap">
+            {item.kode}
+          </td>
+          <td className="py-1.5 px-2 border border-gray-300">
+            <span style={{ paddingLeft: `${depth * 10}px` }} className={depth === 0 ? 'font-bold uppercase text-[10px]' : ''}>
+              {item.uraian}
+            </span>
+          </td>
+          <td className="py-1.5 px-2 text-right font-mono border border-gray-300">
+            {formatRupiah(item.anggaran)}
+          </td>
+          <td className="py-1.5 px-2 text-right font-mono border border-gray-300">
+            {formatRupiah(item.realisasi)}
+          </td>
+          <td className="py-1.5 px-2 text-right font-mono border border-gray-300">
+            {formatRupiah(item.sisa_anggaran)}
+          </td>
+          <td className="py-1.5 px-2 text-right font-mono border border-gray-300">
+            {sisaRatio.toFixed(1)}%
+          </td>
+          <td className="py-1.5 px-2 text-right font-mono border border-gray-300">
+            {formatRupiah(item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi))}
+          </td>
+        </tr>
+        {hasChildren && item.children!.map(child => renderPrintRow(child, depth + 1))}
+      </React.Fragment>
+    );
+  };
+
+  const renderPrintSummaryRow = (item: any, labelClass = "text-emerald-950") => {
+    return (
+      <tr className="font-bold text-[10px] border border-gray-300 bg-gray-50/50 page-break-inside-avoid">
+        <td className="py-1.5 px-2 border border-gray-300 font-mono"></td>
+        <td className={`py-1.5 px-2 border border-gray-300 uppercase ${labelClass}`}>
+          {item.uraian}
+        </td>
+        <td className="py-1.5 px-2 text-right font-mono border border-gray-300">{formatRupiah(item.anggaran)}</td>
+        <td className="py-1.5 px-2 text-right font-mono border border-gray-300">{formatRupiah(item.realisasi)}</td>
+        <td className="py-1.5 px-2 text-right font-mono border border-gray-300">{formatRupiah(item.sisa_anggaran)}</td>
+        <td className="py-1.5 px-2 text-right font-mono border border-gray-300 font-bold">
+          {item.persentase.toFixed(1)}%
+        </td>
+        <td className="py-1.5 px-2 text-right font-mono border border-gray-300">
+          {formatRupiah(item.prognosis)}
+        </td>
+      </tr>
+    );
+  };
+
+  const renderPrintEmptyRow = () => {
+    return (
+      <tr className="h-4 border border-gray-300 page-break-inside-avoid">
+        <td colSpan={7} className="py-1 px-2 border border-gray-300"></td>
       </tr>
     );
   };
@@ -714,10 +860,25 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
   return (
     <div className="space-y-6">
       
+      {/* Loading Overlay for Printing All or Single SKPDs */}
+      {(printingAll || printingSingle) && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white p-6">
+          <div className="bg-gray-950 p-8 rounded-2xl border border-gray-800 flex flex-col items-center max-w-md text-center shadow-2xl animate-fade-in">
+            <RefreshCw className="w-12 h-12 text-emerald-400 animate-spin mb-4" />
+            <h3 className="text-lg font-bold">Menyiapkan Laporan PDF</h3>
+            <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+              {printingAll 
+                ? "Sedang mengambil dan mengolah data LRA Subrincian Objek untuk seluruh SKPD di Kabupaten Kediri. Proses ini memerlukan waktu beberapa detik, mohon tidak menutup halaman ini."
+                : `Sedang mengolah dan menyusun data LRA Subrincian Objek untuk SKPD "${activeSkpdName}" ke format PDF formal F4 Landscape.`}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Filter and Report Scope Toggles */}
-      <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
+      <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden">
         
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             id="report-skpd-tab"
             onClick={() => setReportType('skpd')}
@@ -728,7 +889,20 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
             }`}
           >
             <Table className="w-3.5 h-3.5" />
-            <span>LRA SKPD</span>
+            <span>LRA SKPD (Struktural)</span>
+          </button>
+
+          <button
+            id="report-subrincian-tab"
+            onClick={() => setReportType('subrincian')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+              reportType === 'subrincian'
+                ? 'bg-gray-950 text-white border-gray-950 shadow-sm'
+                : 'bg-white text-gray-600 border-gray-200 hover:text-gray-950'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>LRA Subrincian Objek SKPD</span>
           </button>
           
           {role === 'pemda' && (
@@ -748,7 +922,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
         </div>
 
         {/* Month Picker */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 lg:self-end">
           <span className="text-[11px] font-bold text-gray-400 uppercase">Periode:</span>
           <select
             id="report-month-select"
@@ -764,6 +938,38 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
 
       </div>
 
+      {/* Folio / F4 Landscape Printing Instructions - Accordion */}
+      <div className="bg-amber-50/75 border border-amber-200/80 rounded-xl p-4 text-amber-950 print:hidden shadow-sm">
+        <div className="flex items-center justify-between cursor-pointer" onClick={() => setShowPrintGuide(!showPrintGuide)}>
+          <div className="flex items-center space-x-2.5">
+            <HelpCircle className="w-4 h-4 text-amber-700 shrink-0" />
+            <h4 className="font-bold text-xs uppercase tracking-wide">Panduan Cetak LRA Kertas Folio / F4 Landscape (Save-As PDF)</h4>
+          </div>
+          <button className="text-amber-700 hover:text-amber-950 text-xs font-semibold underline cursor-pointer">
+            {showPrintGuide ? "Sembunyikan" : "Tampilkan Panduan"}
+          </button>
+        </div>
+        
+        {showPrintGuide && (
+          <div className="mt-3 text-xs space-y-2 text-amber-900 border-t border-amber-200/50 pt-2.5 leading-relaxed">
+            <p>Untuk memastikan laporan realisasi anggaran termuat utuh, rapi, dan tidak terpotong di kertas Folio / F4 saat disimpan ke PDF atau dicetak, harap ikuti panduan konfigurasi browser berikut:</p>
+            <ol className="list-decimal pl-5 space-y-1.5 mt-1 font-medium">
+              <li>Klik tombol <strong className="text-amber-950">Cetak / PDF</strong> di bilah laporan di bawah.</li>
+              <li>Pada kolom <strong className="text-amber-950">Tujuan (Destination)</strong>, pilih <strong className="text-amber-950">Simpan sebagai PDF (Save as PDF)</strong>.</li>
+              <li>Atur <strong className="text-amber-950">Tata Letak (Layout)</strong> menjadi <strong className="text-amber-950">Lanskap (Landscape)</strong>.</li>
+              <li>Buka <strong className="text-amber-950">Setelan Lainnya (More Settings)</strong>:
+                <ul className="list-disc pl-5 mt-1 space-y-1 font-normal text-amber-800">
+                  <li><strong className="text-amber-900">Ukuran Kertas (Paper Size):</strong> Pilih <strong className="text-amber-900">Folio</strong>, <strong className="text-amber-900">F4</strong>, atau <strong className="text-amber-900">8.5x13 in</strong> (Jika tidak ada, pilih <em className="italic">Legal</em> atau buat <em className="italic">Ukuran Kustom: 215 x 330 mm</em>).</li>
+                  <li><strong className="text-amber-900">Margin:</strong> Ubah menjadi <strong className="text-amber-900">Minimum</strong> atau <strong className="text-amber-900">Kustom (Custom)</strong> lalu set batas margin ke <strong className="text-amber-900">0.4 inci (10 mm)</strong> di semua sisi agar tidak terpotong.</li>
+                  <li><strong className="text-amber-900">Skala (Scale):</strong> Pilih <strong className="text-amber-900">Sesuai Lebar Halaman (Fit to Page)</strong> atau isi secara kustom antara <strong className="text-amber-900">80% - 90%</strong> jika kolom kanan masih terpotong sedikit.</li>
+                  <li><strong className="text-amber-900">Grafik Latar Belakang (Background graphics):</strong> <strong className="text-amber-900">Centang / Aktifkan</strong> agar warna baris pembatas laporan formal tetap terlihat jelas dan berkelas.</li>
+                </ul>
+              </li>
+            </ol>
+          </div>
+        )}
+      </div>
+
       {/* Main Report Window */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden print:border-none print:shadow-none print:overflow-visible">
         
@@ -771,14 +977,18 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
         <div className="hidden print:block text-center border-b-2 border-double border-gray-900 pb-4 mb-6">
           <h1 className="text-sm font-bold tracking-wide uppercase text-gray-900">Pemerintah Kabupaten Kediri</h1>
           <h2 className="text-base font-extrabold tracking-wider uppercase text-gray-900 mt-1">
-            {reportType === 'skpd' ? 'Laporan Realisasi Anggaran (LRA) SKPD' : 'Laporan Realisasi Anggaran (LRA) Kabupaten Kediri (Konsolidasi)'}
+            {reportType === 'skpd' 
+              ? 'Laporan Realisasi Anggaran (LRA) SKPD' 
+              : reportType === 'subrincian' 
+                ? 'Laporan Realisasi Anggaran (LRA) Subrincian Objek SKPD' 
+                : 'Laporan Realisasi Anggaran (LRA) Kabupaten Kediri (Konsolidasi)'}
           </h2>
           <p className="text-xs text-gray-700 font-semibold mt-1">
             Tahun Anggaran {tahun}
           </p>
           <div className="mt-4 text-left grid grid-cols-2 text-xs text-gray-800 font-medium leading-relaxed">
             <div>
-              <span className="inline-block w-20">SKPD</span>: {reportType === 'skpd' ? activeSkpdName : 'KABUPATEN KEDIRI (KONSOLIDASI)'}
+              <span className="inline-block w-20 font-bold">SKPD</span>: {reportType === 'pemda' ? 'KABUPATEN KEDIRI (KONSOLIDASI)' : activeSkpdName}
             </div>
             <div className="text-right">
               <span className="inline-block w-20">Periode</span>: s.d. {months.find(m => m.value === bulan)?.label.replace(' (Semester I)', '').replace(' (Semester II)', '')} {tahun}
@@ -803,7 +1013,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
           </div>
 
           <div className="flex items-center space-x-2">
-            {reportType === 'skpd' && (
+            {(reportType === 'skpd' || reportType === 'subrincian') && (
               <>
                 <button
                   onClick={() => expandAll(reportData, true)}
@@ -819,6 +1029,27 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
                 </button>
               </>
             )}
+            
+             {reportType === 'subrincian' && (
+              <button
+                onClick={handleDownloadSingleSkpdPdf}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1 border border-indigo-600"
+              >
+                <Download className="w-3 h-3" />
+                <span>Unduh PDF (Server)</span>
+              </button>
+            )}
+
+            {reportType === 'subrincian' && role === 'pemda' && (
+              <button
+                onClick={handlePrintAllSkpds}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1.5 border border-blue-600"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Semua SKPD (PDF)</span>
+              </button>
+            )}
+
             <button
               onClick={exportToExcel}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1 border border-emerald-600"
@@ -831,7 +1062,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
               className="bg-white border border-gray-200 hover:border-gray-300 text-gray-800 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1"
             >
               <Download className="w-3 h-3" />
-              <span>Cetak / PDF</span>
+              <span>Cetak / PDF (Browser)</span>
             </button>
           </div>
 
@@ -849,7 +1080,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
               Data LRA Kosong / Belum Diunggah
             </p>
             <p className="text-xs text-gray-400 max-w-sm mt-1 leading-relaxed">
-              {reportType === 'skpd' 
+              {reportType === 'skpd' || reportType === 'subrincian'
                 ? `Belum ada berkas LRA diunggah untuk SKPD "${activeSkpdName}" pada periode ${months.find(m => m.value === bulan)?.label} ${tahun}.`
                 : `Belum ada berkas LRA diunggah untuk Kabupaten Kediri pada periode ${months.find(m => m.value === bulan)?.label} ${tahun}.`}
             </p>
@@ -966,14 +1197,80 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
 
       </div>
 
+      {/* Print-Only Container for All SKPDs (used when Pemda prints all) */}
+      {allSkpdsReportData.length > 0 && (
+        <div className="hidden print:block font-sans text-black">
+          {allSkpdsReportData.map((skpd, idx) => {
+            const calcs = getLraCalculations(skpd.items);
+            const pNode = skpd.items.find(item => item.kode === '4');
+            const bNode = skpd.items.find(item => item.kode === '5');
+            const fNode = skpd.items.find(item => item.kode === '6');
+
+            return (
+              <div 
+                key={skpd.kodeSkpd} 
+                className={`w-full ${idx > 0 ? 'break-before-page' : ''}`}
+                style={{ breakBefore: idx > 0 ? 'page' : 'auto' }}
+              >
+                {/* Government Header per SKPD */}
+                <div className="text-center border-b-2 border-double border-gray-900 pb-4 mb-6 pt-6">
+                  <h1 className="text-sm font-bold tracking-wide uppercase text-gray-900">Pemerintah Kabupaten Kediri</h1>
+                  <h2 className="text-base font-extrabold tracking-wider uppercase text-gray-900 mt-1">
+                    Laporan Realisasi Anggaran (LRA) SKPD Per Subrincian Objek
+                  </h2>
+                  <p className="text-xs text-gray-700 font-semibold mt-1">
+                    Tahun Anggaran {tahun}
+                  </p>
+                  <div className="mt-4 text-left grid grid-cols-2 text-xs text-gray-800 font-medium leading-relaxed pb-2 border-b border-gray-300">
+                    <div>
+                      <span className="inline-block w-20 font-bold">SKPD</span>: [{skpd.kodeSkpd}] {skpd.namaSkpd}
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-block w-20 font-bold">Periode</span>: s.d. {months.find(m => m.value === bulan)?.label.replace(' (Semester I)', '').replace(' (Semester II)', '')} {tahun}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <table className="w-full text-left border-collapse text-[10px]">
+                  <thead>
+                    <tr className="bg-gray-100 text-black font-bold uppercase tracking-wider border-b border-gray-300">
+                      <th className="py-2 px-3 font-semibold w-40 border border-gray-400">Kode Rekening</th>
+                      <th className="py-2 px-3 font-semibold border border-gray-400">Uraian Nama Rekening / Program</th>
+                      <th className="py-2 px-3 font-semibold text-right w-32 border border-gray-400">Anggaran</th>
+                      <th className="py-2 px-3 font-semibold text-right w-32 border border-gray-400">Realisasi</th>
+                      <th className="py-2 px-3 font-semibold text-right w-32 border border-gray-400">Sisa Anggaran</th>
+                      <th className="py-2 px-3 font-semibold text-right w-20 border border-gray-400">Persentase</th>
+                      <th className="py-2 px-3 font-semibold text-right w-36 border border-gray-400">Prognosis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pNode && renderPrintRow(pNode)}
+                    {renderPrintEmptyRow()}
+
+                    {bNode && renderPrintRow(bNode)}
+                    {renderPrintEmptyRow()}
+
+                    {renderPrintSummaryRow(calcs.surplusDefisit, "text-amber-800")}
+                    {renderPrintEmptyRow()}
+
+                    {calcs.hasPembiayaan && fNode && renderPrintRow({ ...fNode, ...calcs.pembiayaan })}
+                    {calcs.hasPembiayaan && renderPrintEmptyRow()}
+
+                    {calcs.hasPembiayaan && renderPrintSummaryRow(calcs.pembiayaanNetto, "text-blue-900")}
+                    {calcs.hasPembiayaan && renderPrintEmptyRow()}
+
+                    {renderPrintSummaryRow(calcs.silpa, "text-emerald-950")}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
     </div>
   );
 };
 
-// Simple spinner helper import
-const RefreshCw = ({ className }: { className?: string }) => (
-  <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-  </svg>
-);
+

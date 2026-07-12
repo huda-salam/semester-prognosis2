@@ -4,6 +4,7 @@ import { KnexMasterRepository, KnexLraRepository, KnexPrognosisRepository } from
 import { MasterUseCase, LraUseCase, PrognosisUseCase } from '../../domain/usecases';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { generateReportsPdf } from '../../utils/pdfGenerator';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bpkad-kediri-secret-key-prognosis-2026';
 
@@ -46,7 +47,7 @@ function requireRole(roles: string[]) {
 }
 
 // Middleware: Verify SKPD ownership (Data isolation per SKPD)
-function checkSkpdOwnership(req: Request, res: Response, next: () => void) {
+async function checkSkpdOwnership(req: Request, res: Response, next: () => void): Promise<void> {
   const user = (req as any).user;
   if (!user) {
     res.status(401).json({ success: false, error: 'Unauthorized: Sesi tidak ditemukan.' });
@@ -67,16 +68,27 @@ function checkSkpdOwnership(req: Request, res: Response, next: () => void) {
     return;
   }
 
-  // Check if targetSkpd is in user's allowed list
-  const allowedCodes = (user.allowed_skpds || []).map((s: any) => s.kode);
-  
-  if (user.kode_skpd === targetSkpd || allowedCodes.includes(targetSkpd)) {
+  if (user.kode_skpd === targetSkpd) {
     next();
-  } else {
-    res.status(403).json({ 
-      success: false, 
-      error: `Forbidden: SKPD Anda tidak memiliki izin untuk mengolah atau melihat data SKPD tujuan (${targetSkpd}).` 
-    });
+    return;
+  }
+
+  try {
+    // Since allowed_skpds is removed from JWT to prevent header size errors,
+    // fetch the allowed codes dynamically from the database securely.
+    const userMappings = await db('user_skpd').where({ username: user.username });
+    const allowedCodes = userMappings.map(m => m.kode_skpd);
+
+    if (allowedCodes.includes(targetSkpd)) {
+      next();
+    } else {
+      res.status(403).json({ 
+        success: false, 
+        error: `Forbidden: SKPD Anda tidak memiliki izin untuk mengolah atau melihat data SKPD tujuan (${targetSkpd}).` 
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: `Internal Server Error: ${error.message}` });
   }
 }
 
@@ -257,6 +269,125 @@ export function createApiRouter(): Router {
       );
       res.json({ success: true, data: report });
     } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/report/subrincian
+   * Fetch hierarchical report per subrincian objek (level 1 s.d level 6) for an SKPD
+   */
+  router.get('/report/subrincian', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { tahun, bulan, kode_skpd } = req.query;
+      if (!tahun || !bulan || !kode_skpd) {
+        res.status(400).json({ success: false, error: 'tahun, bulan, dan kode_skpd wajib diisi' });
+        return;
+      }
+
+      const report = await lraUseCase.getReportSubrincianSkpd(
+        Number(tahun),
+        Number(bulan),
+        kode_skpd as string
+      );
+      res.json({ success: true, data: report });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/report/subrincian-all
+   * Fetch hierarchical reports per subrincian objek for ALL SKPDs (used by Pemda)
+   */
+  router.get('/report/subrincian-all', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { tahun, bulan } = req.query;
+      if (!tahun || !bulan) {
+        res.status(400).json({ success: false, error: 'tahun dan bulan wajib diisi' });
+        return;
+      }
+
+      const report = await lraUseCase.getReportSubrincianAllSkpds(
+        Number(tahun),
+        Number(bulan)
+      );
+      res.json({ success: true, data: report });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/report/subrincian-pdf
+   * Generate formal landscape F4 PDF for a single SKPD
+   */
+  router.get('/report/subrincian-pdf', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { tahun, bulan, kode_skpd } = req.query;
+      if (!tahun || !bulan || !kode_skpd) {
+        res.status(400).json({ success: false, error: 'tahun, bulan, dan kode_skpd wajib diisi' });
+        return;
+      }
+
+      const report = await lraUseCase.getReportSubrincianSkpd(
+        Number(tahun),
+        Number(bulan),
+        kode_skpd as string
+      );
+
+      // Fetch official SKPD Name
+      const skpdRef = await db('master_referensi')
+        .where({ jenis: 'skpd', kode: kode_skpd })
+        .first();
+      const skpdName = skpdRef ? skpdRef.uraian : (kode_skpd as string);
+
+      const cleanName = skpdName.replace(/[^a-zA-Z0-9]/g, '_');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=LRA_SUBRINCIAN_${cleanName}_${bulan}_${tahun}.pdf`);
+
+      generateReportsPdf(
+        res,
+        [{ kodeSkpd: kode_skpd as string, namaSkpd: skpdName, items: report }],
+        Number(tahun),
+        Number(bulan),
+        false
+      );
+    } catch (error: any) {
+      console.error('Failed to generate single SKPD PDF:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/report/subrincian-all-pdf
+   * Generate high-performance consolidated PDF containing all SKPD reports on the server (handles large volume)
+   */
+  router.get('/report/subrincian-all-pdf', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { tahun, bulan } = req.query;
+      if (!tahun || !bulan) {
+        res.status(400).json({ success: false, error: 'tahun dan bulan wajib diisi' });
+        return;
+      }
+
+      const report = await lraUseCase.getReportSubrincianAllSkpds(
+        Number(tahun),
+        Number(bulan)
+      );
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=LRA_SUBRINCIAN_SEMUA_SKPD_${bulan}_${tahun}.pdf`);
+
+      generateReportsPdf(
+        res,
+        report,
+        Number(tahun),
+        Number(bulan),
+        true
+      );
+    } catch (error: any) {
+      console.error('Failed to generate all SKPDs PDF:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -700,13 +831,12 @@ export function createApiRouter(): Router {
         }
       }
 
-      // Generate JWT
+      // Generate JWT (without large allowed_skpds array to avoid header size errors)
       const tokenPayload = {
         username: user.username,
         role: user.role,
         kode_skpd: matchedKode,
-        nama_skpd: matchedNama,
-        allowed_skpds: allowedSkpds
+        nama_skpd: matchedNama
       };
 
       const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });

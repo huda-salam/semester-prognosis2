@@ -627,6 +627,184 @@ export class LraUseCase {
   }
 
   /**
+   * Retrieve LRA report per subrincian objek (Level 1 s.d Level 6 account codes) for a single SKPD
+   */
+  async getReportSubrincianSkpd(tahun: number, bulan: number, kodeSkpd: string): Promise<LraReportItem[]> {
+    const rawData = await this.lraRepo.getByPeriodAndSkpd(tahun, bulan, kodeSkpd);
+    const masterRef = await this.masterRepo.getAll();
+    const savedBelanja = await this.prognosisRepo.getBelanjaBySkpd(kodeSkpd);
+    const savedPendPemb = await this.prognosisRepo.getPendapatanPembiayaanBySkpd(kodeSkpd);
+
+    return this.buildSubrincianReport(rawData, masterRef, savedBelanja, savedPendPemb);
+  }
+
+  /**
+   * Retrieve LRA report per subrincian objek for ALL SKPDs (used by Pemda for exporting)
+   */
+  async getReportSubrincianAllSkpds(tahun: number, bulan: number): Promise<{ kodeSkpd: string; namaSkpd: string; items: LraReportItem[] }[]> {
+    const rawData = await this.lraRepo.getByPeriodAndSkpd(tahun, bulan);
+    const masterRef = await this.masterRepo.getAll();
+    const savedBelanja = await this.prognosisRepo.getAllBelanja();
+    const savedPendPemb = await this.prognosisRepo.getAllPendapatanPembiayaan();
+
+    // Group rawData by SKPD
+    const skpdGroups = new Map<string, { name: string; rows: DataLra[] }>();
+    for (const d of rawData) {
+      if (!skpdGroups.has(d.kode_skpd)) {
+        skpdGroups.set(d.kode_skpd, { name: d.nama_skpd, rows: [] });
+      }
+      skpdGroups.get(d.kode_skpd)!.rows.push(d);
+    }
+
+    // Sort SKPD codes alphabetically
+    const sortedSkpdCodes = Array.from(skpdGroups.keys()).sort();
+
+    const results: { kodeSkpd: string; namaSkpd: string; items: LraReportItem[] }[] = [];
+
+    for (const code of sortedSkpdCodes) {
+      const group = skpdGroups.get(code)!;
+      const skpdSavedBelanja = savedBelanja.filter(b => b.kode_skpd === code);
+      const skpdSavedPendPemb = savedPendPemb.filter(p => p.kode_skpd === code);
+
+      const items = this.buildSubrincianReport(group.rows, masterRef, skpdSavedBelanja, skpdSavedPendPemb);
+      results.push({
+        kodeSkpd: code,
+        namaSkpd: group.name,
+        items
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Internal helper to build Level 1 s.d Level 6 account code report
+   */
+  private buildSubrincianReport(
+    rawData: DataLra[],
+    masterRef: MasterReference[],
+    savedBelanja: DataPrognosisBelanja[] = [],
+    savedPendPemb: DataPrognosisPendapatanPembiayaan[] = []
+  ): LraReportItem[] {
+    const mapBelanjaPrognosis = new Map<string, number>();
+    for (const b of savedBelanja) {
+      mapBelanjaPrognosis.set(`${b.kode_sub_kegiatan}-${b.kode_rekening}`, b.nilai_prognosis);
+    }
+    const mapPendPembPrognosis = new Map<string, number>();
+    for (const p of savedPendPemb) {
+      mapPendPembPrognosis.set(p.kode_rekening, p.nilai_prognosis);
+    }
+
+    const mapMaster = new Map(masterRef.filter(m => m.jenis === 'rekening').map(m => [m.kode, m.uraian]));
+
+    const getAccountUraian = (kode: string, defaultName: string): string => {
+      if (mapMaster.has(kode)) {
+        return mapMaster.get(kode)!;
+      }
+      return defaultName;
+    };
+
+    const nodeMap = new Map<string, LraReportItem>();
+
+    for (const d of rawData) {
+      let recordPrognosis = d.anggaran - d.realisasi;
+      if (d.kode_rekening.startsWith('5')) {
+        const key = `${d.kode_sub_kegiatan || 'UNKNOWN'}-${d.kode_rekening}`;
+        if (mapBelanjaPrognosis.has(key)) {
+          recordPrognosis = mapBelanjaPrognosis.get(key)!;
+        }
+      } else {
+        const key = d.kode_rekening;
+        if (mapPendPembPrognosis.has(key)) {
+          recordPrognosis = mapPendPembPrognosis.get(key)!;
+        }
+      }
+
+      const parts = d.kode_rekening.split('.');
+      if (parts.length === 0 || !parts[0]) continue;
+
+      for (let i = 1; i <= parts.length; i++) {
+        const lvlKode = parts.slice(0, i).join('.');
+        let node = nodeMap.get(lvlKode);
+        if (!node) {
+          const isLeaf = (i === parts.length);
+          const defaultName = isLeaf ? d.nama_rekening : `Kelompok Akun ${lvlKode}`;
+          const uraian = getAccountUraian(lvlKode, defaultName);
+
+          node = {
+            kode: lvlKode,
+            uraian,
+            jenis: `rekening_level${i}`,
+            anggaran: 0,
+            realisasi: 0,
+            sisa_anggaran: 0,
+            persentase: 0,
+            prognosis: 0,
+            children: []
+          };
+          nodeMap.set(lvlKode, node);
+
+          if (i > 1) {
+            const parentKode = parts.slice(0, i - 1).join('.');
+            const parentNode = nodeMap.get(parentKode);
+            if (parentNode) {
+              if (!parentNode.children) parentNode.children = [];
+              parentNode.children.push(node);
+            }
+          }
+        }
+
+        // Add amounts only to the exact leaf node for this transaction row
+        if (i === parts.length) {
+          node.anggaran += d.anggaran;
+          node.realisasi += d.realisasi;
+          node.prognosis = (node.prognosis || 0) + recordPrognosis;
+        }
+      }
+    }
+
+    const rollup = (item: LraReportItem) => {
+      if (!item.children || item.children.length === 0) {
+        item.sisa_anggaran = item.anggaran - item.realisasi;
+        item.persentase = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
+        return;
+      }
+
+      item.anggaran = 0;
+      item.realisasi = 0;
+      item.sisa_anggaran = 0;
+      item.prognosis = 0;
+
+      for (const child of item.children) {
+        rollup(child);
+        item.anggaran += child.anggaran;
+        item.realisasi += child.realisasi;
+        item.sisa_anggaran += child.sisa_anggaran;
+        item.prognosis += (child.prognosis || 0);
+      }
+      item.persentase = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
+    };
+
+    const finalRoots: LraReportItem[] = [];
+    for (const l1 of ['4', '5', '6']) {
+      const node = nodeMap.get(l1);
+      if (node) {
+        rollup(node);
+        const sortChildren = (n: LraReportItem) => {
+          if (n.children && n.children.length > 0) {
+            n.children.sort((a, b) => a.kode.localeCompare(b.kode));
+            n.children.forEach(sortChildren);
+          }
+        };
+        sortChildren(node);
+        finalRoots.push(node);
+      }
+    }
+
+    return finalRoots;
+  }
+
+  /**
    * Retrieve rekap level Pemda (until level 3)
    */
   async getRekapPemda(tahun: number, bulan: number): Promise<LraReportItem[]> {
