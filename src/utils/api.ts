@@ -17,3 +17,35 @@ export function getApiUrl(path: string): string {
   
   return `${baseUrl}${cleanPath}`.replace(/\/+/g, '/');
 }
+
+/**
+ * Centralized fetch wrapper for API requests.
+ * Automatically handles URL resolution, Authorization bearer token insertion,
+ * and session expiration / 401 Unauthorized interception to trigger re-authentication.
+ */
+export async function apiFetch(input: string | Request | URL, init?: RequestInit): Promise<Response> {
+  const url = typeof input === 'string' ? getApiUrl(input) : input;
+  const token = localStorage.getItem('token');
+
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, {
+    ...init,
+    headers,
+  });
+
+  // Intercept 401 Unauthorized or expired sessions
+  if (response.status === 401) {
+    const urlStr = typeof input === 'string' ? input : input.toString();
+    if (!urlStr.includes('/api/login')) {
+      console.warn('[apiFetch] 401 Unauthorized encountered. Dispatching auth:unauthorized event.');
+      window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: { status: response.status } }));
+    }
+  }
+
+  return response;
+}
+

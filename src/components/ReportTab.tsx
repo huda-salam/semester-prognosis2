@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Folder, ChevronRight, ChevronDown, Table, FileText, Download, ListFilter, AlertCircle, FileSpreadsheet, Layers, Printer, AlertTriangle, HelpCircle, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { LraReportItem } from '../types';
-import { getApiUrl } from '../utils/api';
+import { apiFetch } from '../utils/api';
 
 interface ReportTabProps {
   role: 'skpd' | 'pemda';
@@ -184,7 +184,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
   const [allSkpdsReportData, setAllSkpdsReportData] = useState<{ kodeSkpd: string; namaSkpd: string; items: LraReportItem[] }[]>([]);
   const [printingAll, setPrintingAll] = useState<boolean>(false);
   const [printingSingle, setPrintingSingle] = useState<boolean>(false);
-  const [showPrintGuide, setShowPrintGuide] = useState<boolean>(false);
+  const [showPrintGuide, setShowPrintGuide] = useState<boolean>(true);
 
   // Set of expanded item codes in tree view
   const [expandedKeys, setExpandedKeys] = useState<{ [kode: string]: boolean }>({
@@ -218,11 +218,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
         url = `/api/report/pemda?tahun=${tahun}&bulan=${bulan}`;
       }
 
-      const res = await fetch(getApiUrl(url), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
+      const res = await apiFetch(url);
       const result = await res.json();
       if (res.ok && result.success) {
         setReportData(result.data);
@@ -240,12 +236,22 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
   const handleDownloadSingleSkpdPdf = async () => {
     setPrintingSingle(true);
     try {
-      const url = `/api/report/subrincian-pdf?tahun=${tahun}&bulan=${bulan}&kode_skpd=${activeSkpd}`;
-      const res = await fetch(getApiUrl(url), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
+      let url = '';
+      let filename = '';
+      if (reportType === 'skpd') {
+        url = `/api/report/skpd-pdf?tahun=${tahun}&bulan=${bulan}&kode_skpd=${activeSkpd}`;
+        const cleanName = activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_');
+        filename = `LRA_SKPD_${cleanName}_${bulan}_${tahun}.pdf`;
+      } else if (reportType === 'subrincian') {
+        url = `/api/report/subrincian-pdf?tahun=${tahun}&bulan=${bulan}&kode_skpd=${activeSkpd}`;
+        const cleanName = activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_');
+        filename = `LRA_SUBRINCIAN_${cleanName}_${bulan}_${tahun}.pdf`;
+      } else {
+        url = `/api/report/pemda-pdf?tahun=${tahun}&bulan=${bulan}`;
+        filename = `LRA_KONSOLIDASI_PEMDA_${bulan}_${tahun}.pdf`;
+      }
+
+      const res = await apiFetch(url);
       if (!res.ok) {
         throw new Error('Gagal mengunduh berkas PDF dari server');
       }
@@ -253,15 +259,14 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
       const fileUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = fileUrl;
-      const cleanName = activeSkpdName.replace(/[^a-zA-Z0-9]/g, '_');
-      a.download = `LRA_SUBRINCIAN_${cleanName}_${bulan}_${tahun}.pdf`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(fileUrl);
     } catch (err: any) {
-      console.error('Failed to download single SKPD PDF:', err);
-      alert('Gagal memproses unduhan PDF SKPD dari server: ' + err.message);
+      console.error('Failed to download PDF:', err);
+      alert('Gagal memproses unduhan PDF dari server: ' + err.message);
     } finally {
       setPrintingSingle(false);
     }
@@ -271,11 +276,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
     setPrintingAll(true);
     try {
       const url = `/api/report/subrincian-all-pdf?tahun=${tahun}&bulan=${bulan}`;
-      const res = await fetch(getApiUrl(url), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
+      const res = await apiFetch(url);
       if (!res.ok) {
         throw new Error('Gagal mengunduh berkas PDF dari server');
       }
@@ -869,7 +870,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
             <p className="text-xs text-gray-400 mt-2 leading-relaxed">
               {printingAll 
                 ? "Sedang mengambil dan mengolah data LRA Subrincian Objek untuk seluruh SKPD di Kabupaten Kediri. Proses ini memerlukan waktu beberapa detik, mohon tidak menutup halaman ini."
-                : `Sedang mengolah dan menyusun data LRA Subrincian Objek untuk SKPD "${activeSkpdName}" ke format PDF formal F4 Landscape.`}
+                : "Sedang mengolah dan menyusun data laporan ke format PDF formal F4 Landscape."}
             </p>
           </div>
         </div>
@@ -1013,7 +1014,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
           </div>
 
           <div className="flex items-center space-x-2">
-            {(reportType === 'skpd' || reportType === 'subrincian') && (
+            {(reportType === 'skpd' || reportType === 'subrincian' || reportType === 'pemda') && (
               <>
                 <button
                   onClick={() => expandAll(reportData, true)}
@@ -1030,40 +1031,31 @@ export const ReportTab: React.FC<ReportTabProps> = ({ role, activeSkpd, skpdList
               </>
             )}
             
-             {reportType === 'subrincian' && (
-              <button
-                onClick={handleDownloadSingleSkpdPdf}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1 border border-indigo-600"
-              >
-                <Download className="w-3 h-3" />
-                <span>Unduh PDF (Server)</span>
-              </button>
-            )}
+             <button
+               onClick={handleDownloadSingleSkpdPdf}
+               className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1 border border-indigo-600"
+             >
+               <Download className="w-3 h-3" />
+               <span>Unduh PDF</span>
+             </button>
 
-            {reportType === 'subrincian' && role === 'pemda' && (
-              <button
-                onClick={handlePrintAllSkpds}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1.5 border border-blue-600"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Cetak Semua SKPD (PDF)</span>
-              </button>
-            )}
+             {reportType === 'subrincian' && role === 'pemda' && (
+               <button
+                 onClick={handlePrintAllSkpds}
+                 className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1.5 border border-blue-600"
+               >
+                 <Printer className="w-3.5 h-3.5" />
+                 <span>Cetak Semua SKPD (PDF)</span>
+               </button>
+             )}
 
-            <button
-              onClick={exportToExcel}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1 border border-emerald-600"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Ekspor Excel</span>
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="bg-white border border-gray-200 hover:border-gray-300 text-gray-800 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1"
-            >
-              <Download className="w-3 h-3" />
-              <span>Cetak / PDF (Browser)</span>
-            </button>
+             <button
+               onClick={exportToExcel}
+               className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer flex items-center space-x-1 border border-emerald-600"
+             >
+               <FileSpreadsheet className="w-3.5 h-3.5" />
+               <span>Ekspor Excel</span>
+             </button>
           </div>
 
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, CheckCircle, AlertTriangle, HelpCircle, RefreshCw } from 'lucide-react';
-import { getApiUrl } from '../utils/api';
+import { apiFetch } from '../utils/api';
 
 interface UploadTabProps {
   role: 'skpd' | 'pemda';
@@ -118,11 +118,10 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             };
           }
 
-          const response = await fetch(getApiUrl(url), {
+          const response = await apiFetch(url, {
             method: 'POST',
             headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
           });

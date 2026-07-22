@@ -192,6 +192,32 @@ const getLraCalculations = (data: LraReportItem[]) => {
   };
 };
 
+// Word wrap utility that preserves indentation for all wrapped lines
+function wrapTextWithIndent(text: string, maxLen: number, indent: string): string {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = indent;
+
+  for (const word of words) {
+    if (!word) continue;
+    const addedLength = currentLine === indent ? word.length : word.length + 1;
+    if (currentLine.length + addedLength > maxLen) {
+      lines.push(currentLine);
+      currentLine = indent + word;
+    } else {
+      if (currentLine === indent) {
+        currentLine += word;
+      } else {
+        currentLine += ' ' + word;
+      }
+    }
+  }
+  if (currentLine !== indent) {
+    lines.push(currentLine);
+  }
+  return lines.join('\n');
+}
+
 // Flatten LraReportItem recursively
 function flattenReportItem(item: LraReportItem, depth: number = 0, list: any[] = []) {
   const sisaRatio = item.anggaran > 0 ? (item.realisasi / item.anggaran) * 100 : 0;
@@ -199,13 +225,14 @@ function flattenReportItem(item: LraReportItem, depth: number = 0, list: any[] =
   const formattedAnggaran = formatCurrency(item.anggaran);
   const formattedRealisasi = formatCurrency(item.realisasi);
   const formattedSisa = formatCurrency(item.sisa_anggaran);
-  const formattedPersen = sisaRatio.toFixed(1) + '%';
+  const formattedPersen = sisaRatio.toFixed(2);
   const prognosisValue = item.prognosis !== undefined ? item.prognosis : (item.anggaran - item.realisasi);
   const formattedPrognosis = formatCurrency(prognosisValue);
 
   // Indent with non-breaking spaces for professional typesetting in PDF
   const indent = '  '.repeat(depth);
-  const displayUraian = indent + (depth === 0 ? item.uraian.toUpperCase() : item.uraian);
+  const rawUraian = depth === 0 ? item.uraian.toUpperCase() : item.uraian;
+  const displayUraian = wrapTextWithIndent(rawUraian, 65, indent);
 
   const isCategory = depth === 0 || item.jenis === 'kelompok_besar' || item.jenis === 'jenis';
 
@@ -235,7 +262,8 @@ export function generateReportsPdf(
   data: SkpdReportData[],
   tahun: number,
   bulan: number,
-  isAllSkpd: boolean
+  isAllSkpd: boolean,
+  reportTitle?: string
 ) {
   // Use custom size: F4 landscape is 330mm x 215mm = [935 pt, 610 pt]
   const doc = new PDFDocument({
@@ -254,14 +282,18 @@ export function generateReportsPdf(
     doc.addPage();
 
     // 1. Draw Government Header per page
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('PEMERINTAH KABUPATEN KEDIRI', { align: 'center' });
-    doc.fontSize(12).text(
-      isAllSkpd 
+    if (bulan === 6 && !reportTitle) {
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('PEMERINTAH KABUPATEN KEDIRI', { align: 'center' });
+      doc.fontSize(12).text('LAPORAN REALISASI SEMESTER I APBD DAN PROGNOSIS 6 (ENAM) BULAN BERIKUTNYA', { align: 'center' });
+      doc.fontSize(10).text(`TAHUN ANGGARAN ${tahun}`, { align: 'center' });
+    } else {
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('PEMERINTAH KABUPATEN KEDIRI', { align: 'center' });
+      const docTitle = reportTitle || (isAllSkpd 
         ? 'LAPORAN REALISASI ANGGARAN (LRA) SKPD PER SUBRINCIAN OBJEK' 
-        : 'LAPORAN REALISASI ANGGARAN (LRA) SUBRINCIAN OBJEK', 
-      { align: 'center' }
-    );
-    doc.fontSize(10).text(`TAHUN ANGGARAN ${tahun}`, { align: 'center' });
+        : 'LAPORAN REALISASI ANGGARAN (LRA) SUBRINCIAN OBJEK');
+      doc.fontSize(12).text(docTitle, { align: 'center' });
+      doc.fontSize(10).text(`TAHUN ANGGARAN ${tahun}`, { align: 'center' });
+    }
     
     doc.moveDown(0.5);
     
@@ -271,11 +303,16 @@ export function generateReportsPdf(
 
     // SKPD Detail Metadata rows
     const currentY = doc.y;
-    doc.font('Helvetica-Bold').fontSize(9).text('SKPD', 35, currentY);
-    doc.font('Helvetica').text(`: [${skpd.kodeSkpd}] ${skpd.namaSkpd.toUpperCase()}`, 110, currentY);
-    
-    doc.font('Helvetica-Bold').text('PERIODE', 650, currentY);
-    doc.font('Helvetica').text(`: s.d. ${monthLabel} ${tahun}`, 720, currentY);
+    if (bulan === 6 && !reportTitle) {
+      doc.font('Helvetica-Bold').fontSize(9).text('SKPD/Unit SKPD', 35, currentY);
+      doc.font('Helvetica').text(`: ${skpd.kodeSkpd}   ${skpd.namaSkpd.toUpperCase()}`, 130, currentY);
+    } else {
+      doc.font('Helvetica-Bold').fontSize(9).text('SKPD', 35, currentY);
+      doc.font('Helvetica').text(`: [${skpd.kodeSkpd}] ${skpd.namaSkpd.toUpperCase()}`, 110, currentY);
+      
+      doc.font('Helvetica-Bold').text('PERIODE', 650, currentY);
+      doc.font('Helvetica').text(`: s.d. ${monthLabel} ${tahun}`, 720, currentY);
+    }
 
     doc.moveDown(1.2);
 
@@ -318,7 +355,7 @@ export function generateReportsPdf(
       anggaran: formatCurrency(calcs.surplusDefisit.anggaran),
       realisasi: formatCurrency(calcs.surplusDefisit.realisasi),
       sisa_anggaran: formatCurrency(calcs.surplusDefisit.sisa_anggaran),
-      persentase: calcs.surplusDefisit.persentase.toFixed(1) + '%',
+      persentase: calcs.surplusDefisit.persentase.toFixed(2),
       prognosis: formatCurrency(calcs.surplusDefisit.prognosis),
       isBold: true,
       isSummary: true,
@@ -337,7 +374,7 @@ export function generateReportsPdf(
         anggaran: formatCurrency(calcs.pembiayaanNetto.anggaran),
         realisasi: formatCurrency(calcs.pembiayaanNetto.realisasi),
         sisa_anggaran: formatCurrency(calcs.pembiayaanNetto.sisa_anggaran),
-        persentase: calcs.pembiayaanNetto.persentase.toFixed(1) + '%',
+        persentase: calcs.pembiayaanNetto.persentase.toFixed(2),
         prognosis: formatCurrency(calcs.pembiayaanNetto.prognosis),
         isBold: true,
         isSummary: true,
@@ -353,24 +390,40 @@ export function generateReportsPdf(
       anggaran: formatCurrency(calcs.silpa.anggaran),
       realisasi: formatCurrency(calcs.silpa.realisasi),
       sisa_anggaran: formatCurrency(calcs.silpa.sisa_anggaran),
-      persentase: calcs.silpa.persentase.toFixed(1) + '%',
+      persentase: calcs.silpa.persentase.toFixed(2),
       prognosis: formatCurrency(calcs.silpa.prognosis),
       isBold: true,
       isSummary: true,
       summaryColor: '#064e3b' // Emerald tint for SiLPA
     });
 
-    // 3. Define Table options and headers
+    // 3. Define Table options and headers with vertical grid line renderer
+    const rawHeaders = [
+      { label: 'KODE REKENING', property: 'kode', width: 110, align: 'left', headerColor: '#f3f4f6' },
+      { label: 'URAIAN NAMA REKENING / PROGRAM', property: 'uraian', width: 335, align: 'left', headerColor: '#f3f4f6' },
+      { label: 'ANGGARAN', property: 'anggaran', width: 90, align: 'right', headerColor: '#f3f4f6' },
+      { label: 'REALISASI', property: 'realisasi', width: 90, align: 'right', headerColor: '#f3f4f6' },
+      { label: 'SISA ANGGARAN', property: 'sisa_anggaran', width: 90, align: 'right', headerColor: '#f3f4f6' },
+      { label: '%', property: 'persentase', width: 45, align: 'right', headerColor: '#f3f4f6' },
+      { label: 'PROGNOSIS', property: 'prognosis', width: 95, align: 'right', headerColor: '#f3f4f6' }
+    ];
+
+    const tableHeaders = rawHeaders.map((h, colIdx) => ({
+      ...h,
+      renderer: (val: any, indexColumn: number, indexRow: number, row: any, rectRow: any, rectCell: any) => {
+        if (rectCell && rectCell.width > 0 && rectCell.height > 0) {
+          doc.lineWidth(0.5).strokeColor('#000000');
+          if (colIdx === 0) {
+            doc.moveTo(rectCell.x, rectCell.y).lineTo(rectCell.x, rectCell.y + rectCell.height).stroke();
+          }
+          doc.moveTo(rectCell.x + rectCell.width, rectCell.y).lineTo(rectCell.x + rectCell.width, rectCell.y + rectCell.height).stroke();
+        }
+        return val;
+      }
+    }));
+
     const tableData = {
-      headers: [
-        { label: 'KODE REKENING', property: 'kode', width: 110, align: 'left', headerColor: '#f3f4f6' },
-        { label: 'URAIAN NAMA REKENING / PROGRAM', property: 'uraian', width: 335, align: 'left', headerColor: '#f3f4f6' },
-        { label: 'ANGGARAN', property: 'anggaran', width: 90, align: 'right', headerColor: '#f3f4f6' },
-        { label: 'REALISASI', property: 'realisasi', width: 90, align: 'right', headerColor: '#f3f4f6' },
-        { label: 'SISA ANGGARAN', property: 'sisa_anggaran', width: 90, align: 'right', headerColor: '#f3f4f6' },
-        { label: 'PERSENTASE', property: 'persentase', width: 45, align: 'right', headerColor: '#f3f4f6' },
-        { label: 'PROGNOSIS', property: 'prognosis', width: 95, align: 'right', headerColor: '#f3f4f6' }
-      ],
+      headers: tableHeaders,
       datas: tableRows
     };
 
@@ -381,6 +434,14 @@ export function generateReportsPdf(
     doc.table(tableData, {
       prepareHeader: () => doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#000000'),
       prepareRow: (row: any, indexColumn: number, indexRow: number, rectRow: any, rectCell: any) => {
+        if (rectCell && rectCell.width > 0 && rectCell.height > 0) {
+          doc.lineWidth(0.5).strokeColor('#cccccc');
+          if (indexColumn === 0) {
+            doc.moveTo(rectCell.x, rectCell.y).lineTo(rectCell.x, rectCell.y + rectCell.height).stroke();
+          }
+          doc.moveTo(rectCell.x + rectCell.width, rectCell.y).lineTo(rectCell.x + rectCell.width, rectCell.y + rectCell.height).stroke();
+        }
+
         const item = tableRows[indexRow];
         if (item) {
           if (item.isEmptySpacer) {

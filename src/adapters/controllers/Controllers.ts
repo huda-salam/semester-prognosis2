@@ -274,6 +274,48 @@ export function createApiRouter(): Router {
   });
 
   /**
+   * GET /api/report/skpd-pdf
+   * Generate formal landscape F4 PDF for LRA SKPD (Struktural)
+   */
+  router.get('/report/skpd-pdf', authenticateUser, checkSkpdOwnership, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { tahun, bulan, kode_skpd } = req.query;
+      if (!tahun || !bulan || !kode_skpd) {
+        res.status(400).json({ success: false, error: 'tahun, bulan, dan kode_skpd wajib diisi' });
+        return;
+      }
+
+      const report = await lraUseCase.getReportPerSkpd(
+        Number(tahun),
+        Number(bulan),
+        kode_skpd as string
+      );
+
+      // Fetch official SKPD Name
+      const skpdRef = await db('master_referensi')
+        .where({ jenis: 'skpd', kode: kode_skpd })
+        .first();
+      const skpdName = skpdRef ? skpdRef.uraian : (kode_skpd as string);
+
+      const cleanName = skpdName.replace(/[^a-zA-Z0-9]/g, '_');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=LRA_SKPD_${cleanName}_${bulan}_${tahun}.pdf`);
+
+      generateReportsPdf(
+        res,
+        [{ kodeSkpd: kode_skpd as string, namaSkpd: skpdName, items: report }],
+        Number(tahun),
+        Number(bulan),
+        false,
+        'LAPORAN REALISASI ANGGARAN (LRA) SKPD'
+      );
+    } catch (error: any) {
+      console.error('Failed to generate SKPD LRA PDF:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
    * GET /api/report/subrincian
    * Fetch hierarchical report per subrincian objek (level 1 s.d level 6) for an SKPD
    */
@@ -407,6 +449,37 @@ export function createApiRouter(): Router {
       const report = await lraUseCase.getRekapPemda(Number(tahun), Number(bulan));
       res.json({ success: true, data: report });
     } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/report/pemda-pdf
+   * Generate formal landscape F4 PDF for Rekapitulasi Pemda (Level 3)
+   */
+  router.get('/report/pemda-pdf', authenticateUser, requireRole(['pemda']), async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { tahun, bulan } = req.query;
+      if (!tahun || !bulan) {
+        res.status(400).json({ success: false, error: 'tahun dan bulan wajib diisi' });
+        return;
+      }
+
+      const report = await lraUseCase.getRekapPemda(Number(tahun), Number(bulan));
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=LRA_REKAPITULASI_PEMDA_${bulan}_${tahun}.pdf`);
+
+      generateReportsPdf(
+        res,
+        [{ kodeSkpd: 'PEMDA', namaSkpd: 'KABUPATEN KEDIRI (KONSOLIDASI)', items: report }],
+        Number(tahun),
+        Number(bulan),
+        false,
+        'LAPORAN REALISASI ANGGARAN (LRA) KABUPATEN KEDIRI (KONSOLIDASI)'
+      );
+    } catch (error: any) {
+      console.error('Failed to generate Pemda LRA PDF:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });

@@ -22,7 +22,7 @@ import {
   ShieldAlert,
   X
 } from 'lucide-react';
-import { getApiUrl } from '../utils/api';
+import { apiFetch } from '../utils/api';
 
 interface AdminTabProps {
   onUploadSuccess: () => void;
@@ -69,11 +69,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
   const fetchDbSummary = async () => {
     setLoadingSummary(true);
     try {
-      const res = await fetch(getApiUrl('/api/admin/master-summary'), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
+      const res = await apiFetch('/api/admin/master-summary');
       const result = await res.json();
       if (res.ok && result.success) {
         setSummary(result.data);
@@ -90,11 +86,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     setLoadingValidation(true);
     setValidationError('');
     try {
-      const res = await fetch(getApiUrl('/api/admin/skpd-validation-status'), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
+      const res = await apiFetch('/api/admin/skpd-validation-status');
       const result = await res.json();
       if (res.ok && result.success) {
         setSkpdStatusList(result.data || []);
@@ -117,11 +109,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     if (actionInProgress) return;
     setActionInProgress(kodeSkpd);
     try {
-      const res = await fetch(getApiUrl('/api/prognosis/unlock'), {
+      const res = await apiFetch('/api/prognosis/unlock', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           kode_skpd: kodeSkpd,
@@ -147,11 +138,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     if (actionInProgress) return;
     setActionInProgress(kodeSkpd);
     try {
-      const res = await fetch(getApiUrl('/api/prognosis/submit'), {
+      const res = await apiFetch('/api/prognosis/submit', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           kode_skpd: kodeSkpd,
@@ -201,11 +191,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
     setCurrentPage(1);
 
     try {
-      const res = await fetch(getApiUrl('/api/admin/query'), {
+      const res = await apiFetch('/api/admin/query', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ sql: sqlToRun })
       });
@@ -271,11 +260,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onUploadSuccess }) => {
           }
           const base64 = btoa(binary);
 
-          const response = await fetch(getApiUrl('/api/upload-master'), {
+          const response = await apiFetch('/api/upload-master', {
             method: 'POST',
             headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify({ fileBase64: base64, user: 'PEMDA Admin' })
           });

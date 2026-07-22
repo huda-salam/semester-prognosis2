@@ -7,7 +7,7 @@ import { ReportTab } from './components/ReportTab';
 import { PrognosisTab } from './components/PrognosisTab';
 import { AdminTab } from './components/AdminTab';
 import { LoginForm } from './components/LoginForm';
-import { getApiUrl } from './utils/api';
+import { apiFetch } from './utils/api';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<{
@@ -34,14 +34,26 @@ export default function App() {
   // Triggered when any tab completes a successful upload to refresh details
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
+  // Listen for centralized auth:unauthorized event (triggered when session expires / 401 response)
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      console.warn('Session expired or unauthorized. Clearing user session.');
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('token');
+      setCurrentUser(null);
+      setActiveTab('prognosis');
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('auth:unauthorized', handleUnauthorized);
+    };
+  }, []);
+
   const fetchSkpds = async () => {
     try {
       setLoadingSkpd(true);
-      const res = await fetch(getApiUrl('/api/master?jenis=skpd'), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
+      const res = await apiFetch('/api/master?jenis=skpd');
       const result = await res.json();
       if (res.ok && result.success) {
         const data = result.data || [];
@@ -102,7 +114,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch(getApiUrl('/api/logout'), { method: 'POST' });
+      await apiFetch('/api/logout', { method: 'POST' });
     } catch (e) {
       console.error('Logout error:', e);
     }

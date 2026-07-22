@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HelpCircle, RefreshCw, Lock, Unlock, AlertCircle, Save, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { DataPrognosisBelanja, DataPrognosisPendapatanPembiayaan } from '../types';
-import { getApiUrl } from '../utils/api';
+import { apiFetch } from '../utils/api';
 
 interface PrognosisTabProps {
   role: 'skpd' | 'pemda';
@@ -83,11 +83,7 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
     setLoading(true);
     setSaveStatus('');
     try {
-      const res = await fetch(getApiUrl(`/api/prognosis?kode_skpd=${activeSkpd}&tahun=2026`), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-        }
-      });
+      const res = await apiFetch(`/api/prognosis?kode_skpd=${activeSkpd}&tahun=2026`);
       const result = await res.json();
       if (res.ok && result.success) {
         setBelanjaList(result.data.belanja || []);
@@ -209,11 +205,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
 
   const saveDraftBelanja = async (item: any) => {
     try {
-      const res = await fetch(getApiUrl('/api/prognosis/update-belanja'), {
+      const res = await apiFetch('/api/prognosis/update-belanja', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
@@ -238,11 +233,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
 
   const saveDraftPendPemb = async (item: any) => {
     try {
-      const res = await fetch(getApiUrl('/api/prognosis/update-pend-pemb'), {
+      const res = await apiFetch('/api/prognosis/update-pend-pemb', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
@@ -268,11 +262,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
   const handleSubmitPrognosis = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch(getApiUrl('/api/prognosis/submit'), {
+      const res = await apiFetch('/api/prognosis/submit', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
@@ -295,11 +288,10 @@ export const PrognosisTab: React.FC<PrognosisTabProps> = ({ role, activeSkpd, sk
   const handleUnlockPrognosis = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch(getApiUrl('/api/prognosis/unlock'), {
+      const res = await apiFetch('/api/prognosis/unlock', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           kode_skpd: activeSkpd,
