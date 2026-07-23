@@ -265,10 +265,10 @@ export function generateReportsPdf(
   isAllSkpd: boolean,
   reportTitle?: string
 ) {
-  // Use custom size: F4 landscape is 330mm x 215mm = [935 pt, 610 pt]
+  // Margins in points: 1.5 cm = 42.5 pt, 1 cm = 28.3 pt, 1.5 cm = 42.5 pt, 2.5 cm = 70.9 pt
   const doc = new PDFDocument({
     size: [935, 610],
-    margins: { top: 30, bottom: 40, left: 30, right: 30 },
+    margins: { top: 42.5, right: 28.3, bottom: 42.5, left: 70.9 },
     autoFirstPage: false
   });
 
@@ -297,21 +297,21 @@ export function generateReportsPdf(
     
     doc.moveDown(0.5);
     
-    // Draw horizontal dividing line
-    doc.moveTo(30, doc.y).lineTo(905, doc.y).lineWidth(1.5).stroke('#000000');
+    // Draw horizontal dividing line across full printable width (70.9 to 906.7)
+    doc.moveTo(70.9, doc.y).lineTo(906.7, doc.y).lineWidth(1.5).stroke('#000000');
     doc.moveDown(0.5);
 
     // SKPD Detail Metadata rows
     const currentY = doc.y;
     if (bulan === 6 && !reportTitle) {
-      doc.font('Helvetica-Bold').fontSize(9).text('SKPD/Unit SKPD', 35, currentY);
-      doc.font('Helvetica').text(`: ${skpd.kodeSkpd}   ${skpd.namaSkpd.toUpperCase()}`, 130, currentY);
+      doc.font('Helvetica-Bold').fontSize(9).text('SKPD/Unit SKPD', 70.9, currentY);
+      doc.font('Helvetica').text(`: ${skpd.kodeSkpd}   ${skpd.namaSkpd.toUpperCase()}`, 160, currentY);
     } else {
-      doc.font('Helvetica-Bold').fontSize(9).text('SKPD', 35, currentY);
-      doc.font('Helvetica').text(`: [${skpd.kodeSkpd}] ${skpd.namaSkpd.toUpperCase()}`, 110, currentY);
+      doc.font('Helvetica-Bold').fontSize(9).text('SKPD', 70.9, currentY);
+      doc.font('Helvetica').text(`: [${skpd.kodeSkpd}] ${skpd.namaSkpd.toUpperCase()}`, 140, currentY);
       
-      doc.font('Helvetica-Bold').text('PERIODE', 650, currentY);
-      doc.font('Helvetica').text(`: s.d. ${monthLabel} ${tahun}`, 720, currentY);
+      doc.font('Helvetica-Bold').text('PERIODE', 680, currentY);
+      doc.font('Helvetica').text(`: s.d. ${monthLabel} ${tahun}`, 740, currentY);
     }
 
     doc.moveDown(1.2);
@@ -320,9 +320,9 @@ export function generateReportsPdf(
     if (!skpd.items || skpd.items.length === 0) {
       doc.font('Helvetica-Oblique').fontSize(10).fillColor('#666666').text(
         `Belum ada berkas LRA diunggah untuk SKPD "${skpd.namaSkpd}" pada periode ini.`,
-        30,
+        70.9,
         doc.y + 20,
-        { align: 'center' }
+        { align: 'center', width: 835.8 }
       );
       return;
     }
@@ -397,66 +397,44 @@ export function generateReportsPdf(
       summaryColor: '#064e3b' // Emerald tint for SiLPA
     });
 
-    // 3. Define Table options and headers with vertical grid line renderer
+    // 3. Define Table headers with adjusted widths for 835.8 pt printable width
     const rawHeaders = [
-      { label: 'KODE REKENING', property: 'kode', width: 110, align: 'left', headerColor: '#f3f4f6' },
-      { label: 'URAIAN NAMA REKENING / PROGRAM', property: 'uraian', width: 335, align: 'left', headerColor: '#f3f4f6' },
-      { label: 'ANGGARAN', property: 'anggaran', width: 90, align: 'right', headerColor: '#f3f4f6' },
-      { label: 'REALISASI', property: 'realisasi', width: 90, align: 'right', headerColor: '#f3f4f6' },
-      { label: 'SISA ANGGARAN', property: 'sisa_anggaran', width: 90, align: 'right', headerColor: '#f3f4f6' },
-      { label: '%', property: 'persentase', width: 45, align: 'right', headerColor: '#f3f4f6' },
-      { label: 'PROGNOSIS', property: 'prognosis', width: 95, align: 'right', headerColor: '#f3f4f6' }
+      { label: 'KODE REKENING', property: 'kode', width: 110, align: 'left', headerAlign: 'center', headerColor: '#f3f4f6' },
+      { label: 'URAIAN NAMA REKENING / PROGRAM', property: 'uraian', width: 335, align: 'left', headerAlign: 'center', headerColor: '#f3f4f6' },
+      { label: 'ANGGARAN', property: 'anggaran', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
+      { label: 'REALISASI', property: 'realisasi', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
+      { label: 'SISA ANGGARAN', property: 'sisa_anggaran', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
+      { label: '%', property: 'persentase', width: 30, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
+      { label: 'PROGNOSIS', property: 'prognosis', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' }
     ];
 
-    const tableHeaders = rawHeaders.map((h, colIdx) => ({
-      ...h,
-      renderer: (val: any, indexColumn: number, indexRow: number, row: any, rectRow: any, rectCell: any) => {
-        if (rectCell && rectCell.width > 0 && rectCell.height > 0) {
-          doc.lineWidth(0.5).strokeColor('#000000');
-          if (colIdx === 0) {
-            doc.moveTo(rectCell.x, rectCell.y).lineTo(rectCell.x, rectCell.y + rectCell.height).stroke();
-          }
-          doc.moveTo(rectCell.x + rectCell.width, rectCell.y).lineTo(rectCell.x + rectCell.width, rectCell.y + rectCell.height).stroke();
-        }
-        return val;
-      }
-    }));
-
     const tableData = {
-      headers: tableHeaders,
+      headers: rawHeaders,
       datas: tableRows
     };
 
-    // Reset X position before rendering the table to ensure it is aligned correctly
-    doc.x = 35;
+    // Reset X position before rendering the table to align with left margin
+    doc.x = 70.9;
 
-    // Render table
+    // Render table with default table grid settings
     doc.table(tableData, {
-      prepareHeader: () => doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#000000'),
+      prepareHeader: () => {
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#000000');
+      },
       prepareRow: (row: any, indexColumn: number, indexRow: number, rectRow: any, rectCell: any) => {
-        if (rectCell && rectCell.width > 0 && rectCell.height > 0) {
-          doc.lineWidth(0.5).strokeColor('#cccccc');
-          if (indexColumn === 0) {
-            doc.moveTo(rectCell.x, rectCell.y).lineTo(rectCell.x, rectCell.y + rectCell.height).stroke();
-          }
-          doc.moveTo(rectCell.x + rectCell.width, rectCell.y).lineTo(rectCell.x + rectCell.width, rectCell.y + rectCell.height).stroke();
-        }
-
         const item = tableRows[indexRow];
         if (item) {
           if (item.isEmptySpacer) {
-            // Draw thin line row
             doc.font('Helvetica').fontSize(1);
           } else if (item.isSummary) {
-            doc.font('Helvetica-Bold').fontSize(7.5).fillColor(item.summaryColor || '#000000');
-            // Give summary rows a light background tint
+            doc.font('Helvetica-Bold').fontSize(8.5).fillColor(item.summaryColor || '#000000');
             if (rectCell) {
               doc.addBackground(rectCell, item.summaryColor || '#000000', 0.05);
             }
           } else if (item.isBold) {
-            doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#000000');
+            doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#000000');
           } else {
-            doc.font('Helvetica').fontSize(7).fillColor('#333333');
+            doc.font('Helvetica').fontSize(8).fillColor('#333333');
           }
         }
       }
