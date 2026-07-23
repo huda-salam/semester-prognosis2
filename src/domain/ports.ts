@@ -23,6 +23,8 @@ export interface IPrognosisRepository {
   getPendapatanPembiayaanBySkpd(kodeSkpd: string): Promise<DataPrognosisPendapatanPembiayaan[]>;
   getAllBelanja(): Promise<DataPrognosisBelanja[]>;
   getAllPendapatanPembiayaan(): Promise<DataPrognosisPendapatanPembiayaan[]>;
+  findBelanjaBySkpdAndSubKegiatanAndRekening(kodeSkpd: string, kodeSubKegiatan: string, kodeRekening: string): Promise<DataPrognosisBelanja | null>;
+  findPendapatanPembiayaanBySkpdAndRekening(kodeSkpd: string, kodeRekening: string): Promise<DataPrognosisPendapatanPembiayaan | null>;
   saveBelanjaMany(records: DataPrognosisBelanja[]): Promise<void>;
   savePendapatanPembiayaanMany(records: DataPrognosisPendapatanPembiayaan[]): Promise<void>;
   updateBelanjaRecord(record: Partial<DataPrognosisBelanja> & { kode_skpd: string, kode_sub_kegiatan: string, kode_rekening: string }): Promise<void>;

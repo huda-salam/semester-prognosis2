@@ -564,17 +564,58 @@ export class LraUseCase {
   }
 
   /**
-   * Automatically initializes prognosis records for new uploaded Belanja leaf-level rows
+   * Automatically initializes or updates prognosis records for uploaded Belanja leaf-level rows
    */
   private async initializePrognosisRecordsForBelanja(tahun: number, bulan: number, lraRecords: DataLra[]) {
     // We only prognosis Semester 2 (using June as base cumulative data, where month = 6)
     if (bulan !== 6) return;
 
+    // Get existing prognosis records for the affected SKPDs
+    const skpdCodes = Array.from(new Set(lraRecords.map(r => r.kode_skpd)));
+    const existingMap = new Map<string, DataPrognosisBelanja>();
+
+    for (const kodeSkpd of skpdCodes) {
+      const existingRecords = await this.prognosisRepo.getBelanjaBySkpd(kodeSkpd);
+      for (const rec of existingRecords) {
+        const key = `${rec.kode_skpd}|${rec.kode_sub_kegiatan}|${rec.kode_rekening}`;
+        existingMap.set(key, rec);
+      }
+    }
+
     const prognosisRecords: DataPrognosisBelanja[] = lraRecords.map(rec => {
+      const subKeg = rec.kode_sub_kegiatan || 'UNKNOWN_SUB_KEG';
+      const key = `${rec.kode_skpd}|${subKeg}|${rec.kode_rekening}`;
+      const existing = existingMap.get(key);
+
+      if (existing) {
+        let nilaiPrognosis = 0;
+        let nilai = existing.nilai;
+
+        if (existing.opsi_input === 'fix') {
+          // Tetap: prognosis menggunakan nilai prognosis yang sudah dientry sebelumnya
+          nilaiPrognosis = existing.nilai_prognosis;
+        } else if (existing.opsi_input === 'tambah_kurang') {
+          // Tambah/Kurang: prognosis = (data anggaran - realisasi baru) + delta (nilai)
+          nilaiPrognosis = Math.max(0, (rec.anggaran - rec.realisasi) + existing.nilai);
+        } else {
+          // Sisa / default: prognosis = data anggaran - realisasi baru
+          nilaiPrognosis = Math.max(0, rec.anggaran - rec.realisasi);
+          nilai = 0;
+        }
+
+        return {
+          ...existing,
+          nilai,
+          nilai_prognosis: nilaiPrognosis,
+          updated_at: new Date().toISOString()
+        };
+      }
+
+      // Belum ada di DB: buat record prognosis baru
       const sisa = Math.max(0, rec.anggaran - rec.realisasi);
       return {
         kode_skpd: rec.kode_skpd,
-        kode_sub_kegiatan: rec.kode_sub_kegiatan || 'UNKNOWN_SUB_KEG',
+        kode_sub_kegiatan: subKeg,
         kode_rekening: rec.kode_rekening,
         opsi_input: 'sisa',
         nilai: 0,
@@ -591,10 +632,45 @@ export class LraUseCase {
   }
 
   /**
-   * Automatically initializes prognosis records for new uploaded Pendapatan/Pembiayaan rows
+   * Automatically initializes or updates prognosis records for uploaded Pendapatan/Pembiayaan rows
    */
   private async initializePrognosisRecordsForPendapatanPembiayaan(tahun: number, lraRecords: DataLra[]) {
+    const skpdCodes = Array.from(new Set(lraRecords.map(r => r.kode_skpd)));
+    const existingMap = new Map<string, DataPrognosisPendapatanPembiayaan>();
+
+    for (const kodeSkpd of skpdCodes) {
+      const existingRecords = await this.prognosisRepo.getPendapatanPembiayaanBySkpd(kodeSkpd);
+      for (const rec of existingRecords) {
+        const key = `${rec.kode_skpd}|${rec.kode_rekening}`;
+        existingMap.set(key, rec);
+      }
+    }
+
     const prognosisRecords: DataPrognosisPendapatanPembiayaan[] = lraRecords.map(rec => {
+      const key = `${rec.kode_skpd}|${rec.kode_rekening}`;
+      const existing = existingMap.get(key);
+
+      if (existing) {
+        let nilaiPrognosis = 0;
+        let nilai = existing.nilai;
+
+        if (existing.opsi_input === 'fix') {
+          nilaiPrognosis = existing.nilai_prognosis;
+        } else if (existing.opsi_input === 'tambah_kurang') {
+          nilaiPrognosis = Math.max(0, (rec.anggaran - rec.realisasi) + existing.nilai);
+        } else {
+          nilaiPrognosis = Math.max(0, rec.anggaran - rec.realisasi);
+          nilai = 0;
+        }
+
+        return {
+          ...existing,
+          nilai,
+          nilai_prognosis: nilaiPrognosis,
+          updated_at: new Date().toISOString()
+        };
+      }
+
       const sisa = Math.max(0, rec.anggaran - rec.realisasi);
       return {
         kode_skpd: rec.kode_skpd,

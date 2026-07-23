@@ -163,6 +163,34 @@ export class KnexPrognosisRepository implements IPrognosisRepository {
     return await db<DataPrognosisPendapatanPembiayaan>('data_prognosis_pendapatan_pembiayaan').select('*');
   }
 
+  async findBelanjaBySkpdAndSubKegiatanAndRekening(
+    kodeSkpd: string,
+    kodeSubKegiatan: string,
+    kodeRekening: string
+  ): Promise<DataPrognosisBelanja | null> {
+    const row = await db<DataPrognosisBelanja>('data_prognosis_belanja')
+      .where({
+        kode_skpd: kodeSkpd,
+        kode_sub_kegiatan: kodeSubKegiatan,
+        kode_rekening: kodeRekening
+      })
+      .first();
+    return row || null;
+  }
+
+  async findPendapatanPembiayaanBySkpdAndRekening(
+    kodeSkpd: string,
+    kodeRekening: string
+  ): Promise<DataPrognosisPendapatanPembiayaan | null> {
+    const row = await db<DataPrognosisPendapatanPembiayaan>('data_prognosis_pendapatan_pembiayaan')
+      .where({
+        kode_skpd: kodeSkpd,
+        kode_rekening: kodeRekening
+      })
+      .first();
+    return row || null;
+  }
+
   async saveBelanjaMany(records: DataPrognosisBelanja[]): Promise<void> {
     await db.transaction(async (trx) => {
       const chunkSize = 100;
