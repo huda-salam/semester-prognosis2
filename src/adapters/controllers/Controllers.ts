@@ -475,8 +475,7 @@ export function createApiRouter(): Router {
         [{ kodeSkpd: 'PEMDA', namaSkpd: 'KABUPATEN KEDIRI (KONSOLIDASI)', items: report }],
         Number(tahun),
         Number(bulan),
-        false,
-        'LAPORAN REALISASI ANGGARAN (LRA) KABUPATEN KEDIRI (KONSOLIDASI)'
+        false
       );
     } catch (error: any) {
       console.error('Failed to generate Pemda LRA PDF:', error);

@@ -301,20 +301,18 @@ export function generateReportsPdf(
     doc.moveTo(70.9, doc.y).lineTo(906.7, doc.y).lineWidth(1.5).stroke('#000000');
     doc.moveDown(0.5);
 
-    // SKPD Detail Metadata rows
-    const currentY = doc.y;
-    if (bulan === 6 && !reportTitle) {
-      doc.font('Helvetica-Bold').fontSize(9).text('SKPD/Unit SKPD', 70.9, currentY);
-      doc.font('Helvetica').text(`: ${skpd.kodeSkpd}   ${skpd.namaSkpd.toUpperCase()}`, 160, currentY);
-    } else {
+    // SKPD Detail Metadata rows (omitted for rekap pemda bulan 6)
+    if (!(bulan === 6 && !reportTitle)) {
+      const currentY = doc.y;
       doc.font('Helvetica-Bold').fontSize(9).text('SKPD', 70.9, currentY);
       doc.font('Helvetica').text(`: [${skpd.kodeSkpd}] ${skpd.namaSkpd.toUpperCase()}`, 140, currentY);
       
       doc.font('Helvetica-Bold').text('PERIODE', 680, currentY);
       doc.font('Helvetica').text(`: s.d. ${monthLabel} ${tahun}`, 740, currentY);
+      doc.moveDown(1.2);
+    } else {
+      doc.moveDown(0.5);
     }
-
-    doc.moveDown(1.2);
 
     // Check if report has items
     if (!skpd.items || skpd.items.length === 0) {
@@ -399,13 +397,13 @@ export function generateReportsPdf(
 
     // 3. Define Table headers with adjusted widths for 835.8 pt printable width
     const rawHeaders = [
-      { label: 'KODE REKENING', property: 'kode', width: 110, align: 'left', headerAlign: 'center', headerColor: '#f3f4f6' },
-      { label: 'URAIAN NAMA REKENING / PROGRAM', property: 'uraian', width: 335, align: 'left', headerAlign: 'center', headerColor: '#f3f4f6' },
-      { label: 'ANGGARAN', property: 'anggaran', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
-      { label: 'REALISASI', property: 'realisasi', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
-      { label: 'SISA ANGGARAN', property: 'sisa_anggaran', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
-      { label: '%', property: 'persentase', width: 30, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' },
-      { label: 'PROGNOSIS', property: 'prognosis', width: 90, align: 'right', headerAlign: 'center', headerColor: '#f3f4f6' }
+      { label: 'KODE REKENING', property: 'kode', width: 110, align: 'left', headerAlign: 'left', headerColor: '#d0d0d0' },
+      { label: 'URAIAN', property: 'uraian', width: 335, align: 'left', headerAlign: 'left', headerColor: '#d0d0d0' },
+      { label: 'ANGGARAN', property: 'anggaran', width: 90, align: 'right', headerAlign: 'right', headerColor: '#d0d0d0' },
+      { label: 'REALISASI', property: 'realisasi', width: 90, align: 'right', headerAlign: 'right', headerColor: '#d0d0d0' },
+      { label: 'SISA ANGGARAN', property: 'sisa_anggaran', width: 90, align: 'right', headerAlign: 'right', headerColor: '#d0d0d0' },
+      { label: '%', property: 'persentase', width: 30, align: 'right', headerAlign: 'right', headerColor: '#d0d0d0' },
+      { label: 'PROGNOSIS', property: 'prognosis', width: 90, align: 'right', headerAlign: 'right', headerColor: '#d0d0d0' }
     ];
 
     const tableData = {
